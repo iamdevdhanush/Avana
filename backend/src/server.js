@@ -8,8 +8,9 @@ const app = express();
 
 const PORT = process.env.PORT || 5001;
 
-console.log("Server starting...");
-console.log(`Environment PORT: ${process.env.PORT || 'not set'}`);
+console.log("Starting Avana backend...");
+console.log(`PORT: ${PORT}`);
+console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 
 app.use(cors());
 app.use(express.json());
@@ -28,5 +29,4 @@ app.use('/api/sos', sosRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
 });
