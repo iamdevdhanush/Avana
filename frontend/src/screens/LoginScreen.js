@@ -29,7 +29,7 @@ export function LoginScreen({ onLogin }) {
               <circle cx="24" cy="26" r="4" fill="#00C853"/>
             </svg>
           </div>
-          <h1>SafeSteps</h1>
+          <h1>Avana</h1>
           <p>Your personal safety companion</p>
         </div>
 

@@ -24,7 +24,7 @@ export function ConsentScreen({ onEnable, onDecline }) {
 
         <h1>Your Safety, Your Control</h1>
         <p className="consent-intro">
-          SafeSteps provides real-time safety monitoring and emergency support. 
+          Avana provides real-time safety monitoring and emergency support. 
           Here's how we protect you:
         </p>
 

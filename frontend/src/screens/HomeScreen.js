@@ -52,7 +52,7 @@ export function HomeScreen({ onSOS, sosTriggered }) {
       <header className="home-header">
         <div className="header-top">
           <div>
-            <h1 className="app-logo">SafeSteps</h1>
+            <h1 className="app-logo">Avana</h1>
             <p className="app-tagline">Your safety companion</p>
           </div>
           <div className="status-badge active">

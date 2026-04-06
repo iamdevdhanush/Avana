@@ -201,7 +201,7 @@ export function ProfileScreen({ onLogout }) {
           Log Out
         </button>
 
-        <p className="app-version">SafeSteps v1.0.0</p>
+        <p className="app-version">Avana v1.0.0</p>
 
         <div style={{ height: '100px' }}></div>
       </div>
