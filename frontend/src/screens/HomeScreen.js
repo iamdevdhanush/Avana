@@ -1,36 +1,117 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents } from '../services/supabase';
 import './HomeScreen.css';
 
-export function HomeScreen({ onSOS, sosTriggered }) {
-  const [safetyMode, setSafetyMode] = useState(true);
+export function HomeScreen({ onSOS, sosTriggered, user }) {
   const [location, setLocation] = useState('Detecting location...');
   const [riskLevel, setRiskLevel] = useState('LOW');
   const [riskReason, setRiskReason] = useState('Low crime area, well-lit streets');
   const [sosConfirm, setSosConfirm] = useState(false);
+  const [analytics, setAnalytics] = useState(null);
+  const [liveStatus, setLiveStatus] = useState(false);
+
+  const loadAnalytics = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await getSafetyAnalytics(user.id);
+    if (data) setAnalytics(data);
+  }, [user?.id]);
+
+  const setupRealtime = useCallback(() => {
+    if (!user?.id) return;
+    const channel = subscribeToSafetyEvents((newEvent) => {
+      if (newEvent.risk_level === 'HIGH' || newEvent.risk_level === 'CRITICAL') {
+        setRiskLevel(newEvent.risk_level);
+        setRiskReason('High risk activity detected nearby');
+      }
+      loadAnalytics();
+    });
+
+    return () => {
+      if (channel) channel.unsubscribe();
+    };
+  }, [user?.id, loadAnalytics]);
 
   useEffect(() => {
+    let watchId;
+
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
+      watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          setLocation('MG Road, Bangalore');
-          setRiskLevel('MEDIUM');
-          setRiskReason('Moderate activity area, stay alert');
+          setLiveStatus(true);
+          setLocation('Bangalore, India');
+          
+          const hour = new Date().getHours();
+          const isNight = hour >= 21 || hour < 6;
+          
+          if (isNight) {
+            setRiskLevel('MEDIUM');
+            setRiskReason('Night time - exercise basic caution');
+          } else {
+            setRiskLevel('LOW');
+            setRiskReason('Low crime area, well-lit streets');
+          }
         },
         () => {
           setLocation('Location unavailable');
-        }
+        },
+        { enableHighAccuracy: true, maximumAge: 10000 }
       );
     }
-  }, []);
 
-  const handleSOSPress = () => {
+    if (user?.id) {
+      loadAnalytics();
+      setupRealtime();
+    }
+
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [user, loadAnalytics, setupRealtime]);
+
+  const handleSOSPress = async () => {
     if (sosConfirm) {
+      if (navigator.geolocation && user?.id) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            await saveSafetyEvent({
+              userId: user.id,
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              riskLevel: 'CRITICAL',
+              eventType: 'sos_triggered',
+              description: 'Emergency SOS triggered'
+            });
+          },
+          () => {}
+        );
+      }
+      
       onSOS();
       setSosConfirm(false);
+      loadAnalytics();
     } else {
       setSosConfirm(true);
-      setTimeout(() => setSosConfirm(false), 3000);
+      setTimeout(() => setSosConfirm(false), 5000);
+    }
+  };
+
+  const handleShareLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const link = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
+          if (navigator.share) {
+            navigator.share({ text: `My location: ${link}` });
+          } else {
+            navigator.clipboard.writeText(link);
+            alert('Location copied!');
+          }
+        },
+        () => alert('Could not get location')
+      );
     }
   };
 
@@ -40,6 +121,8 @@ export function HomeScreen({ onSOS, sosTriggered }) {
         return { color: 'var(--red)', bg: 'var(--red-dim)', label: 'High Risk' };
       case 'MEDIUM':
         return { color: 'var(--yellow)', bg: 'var(--yellow-dim)', label: 'Medium Risk' };
+      case 'CRITICAL':
+        return { color: '#FF3D00', bg: 'rgba(255,61,0,0.15)', label: 'Critical' };
       default:
         return { color: 'var(--green)', bg: 'var(--green-dim)', label: 'Low Risk' };
     }
@@ -55,9 +138,9 @@ export function HomeScreen({ onSOS, sosTriggered }) {
             <h1 className="app-logo">Avana</h1>
             <p className="app-tagline">Your safety companion</p>
           </div>
-          <div className="status-badge active">
+          <div className={`status-badge ${liveStatus ? 'active' : ''}`}>
             <span className="status-dot"></span>
-            Active
+            {liveStatus ? 'Active' : 'Locating...'}
           </div>
         </div>
       </header>
@@ -94,13 +177,33 @@ export function HomeScreen({ onSOS, sosTriggered }) {
               <div 
                 className="risk-bar-fill" 
                 style={{ 
-                  width: riskLevel === 'HIGH' ? '100%' : riskLevel === 'MEDIUM' ? '60%' : '25%',
+                  width: riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? '100%' : riskLevel === 'MEDIUM' ? '60%' : '25%',
                   background: riskConfig.color 
                 }}
               ></div>
             </div>
           </div>
         </section>
+
+        {analytics && (
+          <section className="analytics-section">
+            <h2 className="section-title">Your Safety Stats (30 days)</h2>
+            <div className="analytics-grid">
+              <div className="analytics-card">
+                <span className="analytics-value">{analytics.total}</span>
+                <span className="analytics-label">Total Events</span>
+              </div>
+              <div className="analytics-card high">
+                <span className="analytics-value">{analytics.highRisk}</span>
+                <span className="analytics-label">High Risk</span>
+              </div>
+              <div className="analytics-card">
+                <span className="analytics-value">{analytics.mediumRisk}</span>
+                <span className="analytics-label">Medium Risk</span>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="quick-actions">
           <h2 className="section-title">Quick Actions</h2>
@@ -111,11 +214,11 @@ export function HomeScreen({ onSOS, sosTriggered }) {
                   <polygon points="3,11 22,2 13,21 11,13 3,11"/>
                 </svg>
               </div>
-              <span className="action-label">Navigate Safely</span>
+              <span className="action-label">Safety Map</span>
             </Link>
 
-            <button className="action-card card">
-              <div className="action-icon" style={{ background: 'var(--blue-dim, rgba(0, 122, 255, 0.15))', color: '#007AFF' }}>
+            <button className="action-card card" onClick={handleShareLocation}>
+              <div className="action-icon" style={{ background: 'rgba(0, 122, 255, 0.15)', color: '#007AFF' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="18" cy="5" r="3"/>
                   <circle cx="6" cy="12" r="3"/>
@@ -127,26 +230,24 @@ export function HomeScreen({ onSOS, sosTriggered }) {
               <span className="action-label">Share Location</span>
             </button>
 
-            <button className="action-card card">
+            <Link to="/safety" className="action-card card">
               <div className="action-icon" style={{ background: 'var(--yellow-dim)', color: 'var(--yellow)' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/>
                 </svg>
               </div>
-              <span className="action-label">Call Helpline</span>
-            </button>
+              <span className="action-label">Helpline</span>
+            </Link>
 
-            <button className="action-card card">
+            <Link to="/safety" className="action-card card">
               <div className="action-icon" style={{ background: 'var(--red-dim)', color: 'var(--red)' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                   <polyline points="14,2 14,8 20,8"/>
-                  <line x1="12" y1="18" x2="12" y2="12"/>
-                  <line x1="9" y1="15" x2="15" y2="15"/>
                 </svg>
               </div>
-              <span className="action-label">Report Incident</span>
-            </button>
+              <span className="action-label">Report</span>
+            </Link>
           </div>
         </section>
 

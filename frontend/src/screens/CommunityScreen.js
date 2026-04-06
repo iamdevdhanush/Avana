@@ -1,63 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { getCommunityReports, saveCommunityReport, subscribeToCommunityReports } from '../services/supabase';
 import './CommunityScreen.css';
 
-const mockAlerts = [
-  {
-    id: 1,
-    type: 'warning',
-    title: 'Suspicious activity reported',
-    location: 'MG Road, near metro station',
-    time: '15 min ago',
-    description: 'Multiple reports of someone following pedestrians. Please stay alert.',
-    severity: 'medium'
-  },
-  {
-    id: 2,
-    type: 'info',
-    title: 'Police patrol increased',
-    location: 'Indiranagar 100ft Road',
-    time: '1 hour ago',
-    description: 'Increased police presence noted in the area. Safe for travel.',
-    severity: 'low'
-  },
-  {
-    id: 3,
-    type: 'danger',
-    title: 'Harassment incident',
-    location: 'Koramangala 5th Block',
-    time: '2 hours ago',
-    description: 'Incident reported near the bus stop. Avoid the area if possible.',
-    severity: 'high'
-  },
-  {
-    id: 4,
-    type: 'info',
-    title: 'Street lights not working',
-    location: 'HSR Layout Sector 2',
-    time: '3 hours ago',
-    description: 'Street lights are out between sectors 2 and 3. Use alternate routes.',
-    severity: 'low'
-  },
-  {
-    id: 5,
-    type: 'warning',
-    title: 'Unusual crowd gathering',
-    location: 'Brigade Road',
-    time: '4 hours ago',
-    description: 'Large crowd gathering reported. May cause inconvenience.',
-    severity: 'medium'
-  }
-];
+const REPORT_TYPE_LABELS = {
+  suspicious: 'Suspicious Activity',
+  harassment: 'Harassment',
+  unsafe_area: 'Unsafe Area',
+  stalking: 'Stalking',
+  assault: 'Assault',
+  lighting: 'Poor Lighting',
+  isolated: 'Isolated Area',
+  other: 'Other'
+};
 
-export function CommunityScreen() {
-  const [alerts, setAlerts] = useState(mockAlerts);
+function timeAgo(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+  
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hour${Math.floor(seconds / 3600) > 1 ? 's' : ''} ago`;
+  return `${Math.floor(seconds / 86400)} day${Math.floor(seconds / 86400) > 1 ? 's' : ''} ago`;
+}
+
+export function CommunityScreen({ user }) {
+  const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState('all');
   const [showReportModal, setShowReportModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [newReport, setNewReport] = useState({
     type: 'suspicious',
     description: '',
     location: ''
   });
+
+  const loadReports = useCallback(async () => {
+    const { data } = await getCommunityReports(100);
+    if (data) {
+      setAlerts(data.map(r => ({
+        id: r.id,
+        type: r.type,
+        title: REPORT_TYPE_LABELS[r.type] || 'Report',
+        location: r.description?.split('.')[0] || 'Location reported',
+        time: timeAgo(r.created_at),
+        description: r.description || '',
+        severity: r.severity || 'medium',
+        lat: r.lat,
+        lng: r.lng
+      })));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadReports();
+    
+    const channel = subscribeToCommunityReports((newReport) => {
+      setAlerts(prev => [{
+        id: newReport.id,
+        type: newReport.type,
+        title: REPORT_TYPE_LABELS[newReport.type] || 'Report',
+        location: newReport.description?.split('.')[0] || 'Location reported',
+        time: 'Just now',
+        description: newReport.description || '',
+        severity: newReport.severity || 'medium',
+        lat: newReport.lat,
+        lng: newReport.lng
+      }, ...prev]);
+    });
+
+    return () => {
+      if (channel) channel.unsubscribe();
+    };
+  }, [loadReports]);
 
   const filteredAlerts = filter === 'all' 
     ? alerts 
@@ -67,20 +84,39 @@ export function CommunityScreen() {
         a.severity === 'low'
       );
 
-  const handleReportSubmit = () => {
-    if (newReport.description && newReport.location) {
-      const report = {
-        id: Date.now(),
-        type: 'warning',
-        title: `Report: ${newReport.type}`,
-        location: newReport.location,
-        time: 'Just now',
-        description: newReport.description,
-        severity: 'medium'
-      };
-      setAlerts([report, ...alerts]);
-      setShowReportModal(false);
-      setNewReport({ type: 'suspicious', description: '', location: '' });
+  const handleReportSubmit = async () => {
+    if (newReport.description && navigator.geolocation) {
+      setSubmitting(true);
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { error } = await saveCommunityReport({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            type: newReport.type,
+            description: newReport.description,
+            severity: 'medium'
+          });
+          setSubmitting(false);
+          if (!error) {
+            setShowReportModal(false);
+            setNewReport({ type: 'suspicious', description: '', location: '' });
+          }
+        },
+        async () => {
+          const { error } = await saveCommunityReport({
+            lat: 12.9716,
+            lng: 77.5946,
+            type: newReport.type,
+            description: newReport.description,
+            severity: 'medium'
+          });
+          setSubmitting(false);
+          if (!error) {
+            setShowReportModal(false);
+            setNewReport({ type: 'suspicious', description: '', location: '' });
+          }
+        }
+      );
     }
   };
 
@@ -149,7 +185,13 @@ export function CommunityScreen() {
       </div>
 
       <div className="alerts-list scroll-content">
-        {filteredAlerts.length === 0 ? (
+        {loading ? (
+          <div className="empty-state">
+            <div className="empty-icon">⏳</div>
+            <h3>Loading Reports</h3>
+            <p>Fetching community alerts...</p>
+          </div>
+        ) : filteredAlerts.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">✓</div>
             <h3>All Clear</h3>
@@ -242,9 +284,9 @@ export function CommunityScreen() {
               <button 
                 className="btn btn-danger"
                 onClick={handleReportSubmit}
-                disabled={!newReport.description || !newReport.location}
+                disabled={!newReport.description || submitting}
               >
-                Submit Report
+                {submitting ? 'Submitting...' : 'Submit Report'}
               </button>
             </div>
 

@@ -362,3 +362,161 @@ select.input-field {
 .leaflet-heat-pane {
   z-index: 500 !important;
 }
+
+.reports-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-radius: 20px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.report-marker {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: bold;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.community-marker {
+  background: none !important;
+  border: none !important;
+}
+
+.popup-content {
+  padding: 8px;
+  min-width: 150px;
+}
+
+.popup-content strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.popup-content p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.popup-content small {
+  color: #999;
+  font-size: 11px;
+}
+
+.report-form-panel {
+  position: absolute;
+  bottom: 160px;
+  left: 20px;
+  right: 20px;
+  z-index: 1000;
+  padding: 20px;
+  background: rgba(18, 18, 24, 0.98);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  animation: slideUp 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.report-types {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.type-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.type-chip:active {
+  transform: scale(0.97);
+}
+
+.type-chip.active {
+  background: rgba(0,200,83,0.15);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.report-desc {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  font-size: 14px;
+  resize: none;
+  margin-bottom: 12px;
+  font-family: inherit;
+}
+
+.report-desc:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+.submit-report-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit-report-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submit-success {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: var(--green);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.report-area-btn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.report-area-btn:active {
+  background: rgba(255,255,255,0.1);
+}

@@ -1,20 +1,71 @@
 import React, { useState } from 'react';
+import { supabase, signIn, signUp } from '../services/supabase';
 import './LoginScreen.css';
 
-export function LoginScreen({ onLogin }) {
+export function LoginScreen({ onLogin, onAuthError }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    setTimeout(() => {
-      onLogin({ email, name: email.split('@')[0] || 'User' });
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      if (isLogin) {
+        const { data, error } = await signIn(email, password);
+        if (error) throw error;
+        if (data?.user) {
+          onLogin({ 
+            id: data.user.id, 
+            email: data.user.email,
+            name: data.user.email.split('@')[0] 
+          });
+        }
+      } else {
+        const { data, error } = await signUp(email, password);
+        if (error) throw error;
+        
+        if (data.user && !data.session) {
+          setSuccessMessage('Account created! Check your email to confirm.');
+          setIsLogin(true);
+        } else if (data.session) {
+          onLogin({ 
+            id: data.user.id, 
+            email: data.user.email,
+            name: data.user.email.split('@')[0] 
+          });
+        }
+      }
+    } catch (err) {
+      setError(err.message || 'Authentication failed');
+      if (onAuthError) onAuthError(err.message);
+    } finally {
       setLoading(false);
-    }, 800);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed');
+      setLoading(false);
+    }
   };
 
   return (
@@ -33,12 +84,24 @@ export function LoginScreen({ onLogin }) {
           <p>Your personal safety companion</p>
         </div>
 
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="success-message">
+            {successMessage}
+          </div>
+        )}
+
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="input-group">
             <input
-              type="text"
+              type="email"
               className="input-field"
-              placeholder="Email or phone"
+              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -53,6 +116,7 @@ export function LoginScreen({ onLogin }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              minLength={6}
             />
           </div>
 
@@ -75,7 +139,11 @@ export function LoginScreen({ onLogin }) {
           <span>or</span>
         </div>
 
-        <button className="social-btn">
+        <button 
+          className="social-btn" 
+          onClick={handleGoogleLogin}
+          disabled={loading}
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
             <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -89,7 +157,11 @@ export function LoginScreen({ onLogin }) {
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button 
             className="switch-btn"
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError('');
+              setSuccessMessage('');
+            }}
           >
             {isLogin ? 'Sign Up' : 'Sign In'}
           </button>

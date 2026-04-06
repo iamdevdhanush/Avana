@@ -80,6 +80,47 @@
   margin-bottom: 24px;
 }
 
+.analytics-section {
+  margin-bottom: 24px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.analytics-card {
+  text-align: center;
+  padding: 14px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.analytics-card.high {
+  border-color: rgba(255,61,0,0.3);
+}
+
+.analytics-card .analytics-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.analytics-card.high .analytics-value {
+  color: #FF3D00;
+}
+
+.analytics-card .analytics-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .risk-card {
   border: 1px solid;
 }
