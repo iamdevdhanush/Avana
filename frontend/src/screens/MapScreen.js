@@ -14,7 +14,9 @@ const heatmapPoints = [
   [12.9530, 77.6145, 0.15],
   [12.9700, 77.5800, 0.9],
   [12.9420, 77.5600, 0.55],
-  [12.9850, 77.5950, 0.25]
+  [12.9850, 77.5950, 0.25],
+  [12.9750, 77.6050, 0.82],
+  [12.9300, 77.5700, 0.75]
 ];
 
 function HeatmapLayer({ points }) {
@@ -22,19 +24,23 @@ function HeatmapLayer({ points }) {
   const heatLayerRef = useRef(null);
 
   useEffect(() => {
-    if (points && points.length > 0 && !heatLayerRef.current) {
+    if (points && points.length > 0) {
+      if (heatLayerRef.current) {
+        map.removeLayer(heatLayerRef.current);
+      }
+      
       heatLayerRef.current = L.heatLayer(points, {
-        radius: 35,
-        blur: 25,
-        maxZoom: 16,
+        radius: 40,
+        blur: 30,
+        maxZoom: 15,
+        minOpacity: 0.6,
+        maxIntensity: 1,
         gradient: {
-          0.0: 'transparent',
-          0.2: '#00C853',
-          0.4: '#7CB342',
-          0.5: '#FFD600',
+          0.3: '#00C853',
+          0.5: '#7CB342',
+          0.6: '#FFD600',
           0.7: '#FF9100',
-          0.85: '#FF3D3D',
-          1.0: '#B71C1C'
+          0.9: '#FF3D00'
         }
       }).addTo(map);
     }
@@ -46,6 +52,38 @@ function HeatmapLayer({ points }) {
       }
     };
   }, [map, points]);
+
+  return null;
+}
+
+function UserMarker({ position }) {
+  const map = useMap();
+  const markerRef = useRef(null);
+
+  useEffect(() => {
+    if (position && !markerRef.current) {
+      const icon = L.divIcon({
+        className: 'user-location-marker',
+        html: `
+          <div class="user-marker-pulse"></div>
+          <div class="user-marker-dot"></div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+      
+      markerRef.current = L.marker(position, { icon }).addTo(map);
+    } else if (position && markerRef.current) {
+      markerRef.current.setLatLng(position);
+    }
+
+    return () => {
+      if (markerRef.current) {
+        map.removeLayer(markerRef.current);
+        markerRef.current = null;
+      }
+    };
+  }, [map, position]);
 
   return null;
 }
@@ -67,16 +105,37 @@ export function MapScreen() {
   const [riskData, setRiskData] = useState(null);
   const [routeFinding, setRouteFinding] = useState(false);
   const [routeResult, setRouteResult] = useState(null);
+  const [liveStatus, setLiveStatus] = useState(false);
+  const watchIdRef = useRef(null);
+  const defaultLocation = [12.9716, 77.5946];
 
   useEffect(() => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-        () => setUserLocation([12.9716, 77.5946])
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+          setLiveStatus(true);
+        },
+        (err) => {
+          console.warn('Location error:', err.message);
+          setUserLocation(defaultLocation);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000
+        }
       );
     } else {
-      setUserLocation([12.9716, 77.5946]);
+      setUserLocation(defaultLocation);
     }
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleMapClick = (lat, lng) => {
@@ -130,19 +189,25 @@ export function MapScreen() {
   return (
     <div className="map-screen">
       <div className="map-header">
-        <h1 className="page-title">Safety Map</h1>
-        <div className="map-legend">
-          <div className="legend-item">
-            <span className="legend-dot green"></span>
-            Safe
+        <h1 className="page-title">Avana Safety Map</h1>
+        <div className="map-header-right">
+          <div className={`live-indicator ${liveStatus ? 'active' : ''}`}>
+            <span className="live-dot"></span>
+            <span>{liveStatus ? 'Live' : 'Locating...'}</span>
           </div>
-          <div className="legend-item">
-            <span className="legend-dot yellow"></span>
-            Caution
-          </div>
-          <div className="legend-item">
-            <span className="legend-dot red"></span>
-            Danger
+          <div className="map-legend">
+            <div className="legend-item">
+              <span className="legend-dot green"></span>
+              Safe
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot yellow"></span>
+              Caution
+            </div>
+            <div className="legend-item">
+              <span className="legend-dot red"></span>
+              Danger
+            </div>
           </div>
         </div>
       </div>
@@ -160,6 +225,7 @@ export function MapScreen() {
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             <HeatmapLayer points={heatmapPoints} />
+            <UserMarker position={userLocation} />
             <MapClickHandler onMapClick={handleMapClick} />
           </MapContainer>
         )}
@@ -176,7 +242,7 @@ export function MapScreen() {
             <line x1="12" y1="18" x2="12" y2="12"/>
             <line x1="9" y1="15" x2="15" y2="15"/>
           </svg>
-          Report Area
+          Report
         </button>
         
         <button 
