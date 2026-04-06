@@ -1,7 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents } from '../services/supabase';
+import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents, triggerSOSAlert } from '../services/supabase';
 import './HomeScreen.css';
+
+// BUG FIX: Reverse geocode to get real city name instead of hardcoded 'Bangalore'
+async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { 'Accept-Language': 'en', 'User-Agent': 'Avana-SafetyApp/1.0' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.address?.city || data.address?.town || data.address?.suburb || data.address?.state || null;
+  } catch {
+    return null;
+  }
+}
 
 export function HomeScreen({ onSOS, sosTriggered, user }) {
   const [location, setLocation] = useState('Detecting location...');
@@ -32,31 +47,47 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
     };
   }, [user?.id, loadAnalytics]);
 
+  const lastGeocodeRef = useRef(null);
+
   useEffect(() => {
     let watchId;
 
     if (navigator.geolocation) {
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          setLiveStatus(true);
-          setLocation('Bangalore, India');
-          
-          const hour = new Date().getHours();
-          const isNight = hour >= 21 || hour < 6;
-          
-          if (isNight) {
-            setRiskLevel('MEDIUM');
-            setRiskReason('Night time - exercise basic caution');
-          } else {
-            setRiskLevel('LOW');
-            setRiskReason('Low crime area, well-lit streets');
-          }
-        },
-        () => {
-          setLocation('Location unavailable');
-        },
-        { enableHighAccuracy: true, maximumAge: 10000 }
-      );
+      try {
+        watchId = navigator.geolocation.watchPosition(
+          async (pos) => {
+            const { latitude: lat, longitude: lng } = pos.coords;
+            setLiveStatus(true);
+
+            // BUG FIX: Reverse geocode only when coords change significantly
+            const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+            if (key !== lastGeocodeRef.current) {
+              lastGeocodeRef.current = key;
+              const cityName = await reverseGeocode(lat, lng);
+              setLocation(cityName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+            }
+
+            const hour = new Date().getHours();
+            const isNight = hour >= 21 || hour < 6;
+            if (isNight) {
+              setRiskLevel('MEDIUM');
+              setRiskReason('Night time — exercise basic caution');
+            } else {
+              setRiskLevel('LOW');
+              setRiskReason('Low crime area, well-lit streets');
+            }
+          },
+          (err) => {
+            console.warn('Geolocation error:', err.message);
+            setLocation('Location unavailable');
+          },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+        );
+      } catch (err) {
+        console.error('watchPosition setup error:', err);
+      }
+    } else {
+      setLocation('Geolocation not supported');
     }
 
     if (user?.id) {

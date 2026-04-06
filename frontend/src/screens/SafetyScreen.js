@@ -16,8 +16,11 @@ const LEGAL_STEPS = [
   { title: 'Protection Order', desc: 'You can seek restraining order from court' }
 ];
 
-const GEMINI_API_KEY = 'AIzaSyCLSrYdTL_lTkHMeCLFV3bcLC4QpPob1Jc';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+// BUG FIX: Use environment variable for API key, NOT a hardcoded secret
+const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY || '';
+const GEMINI_URL = GEMINI_API_KEY
+  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
+  : null;
 
 export function SafetyScreen({ onSOS }) {
   const [selectedSituation, setSelectedSituation] = useState(null);
@@ -83,6 +86,11 @@ export function SafetyScreen({ onSOS }) {
 
   const sendToGemini = async (message) => {
     setChatLoading(true);
+    // BUG FIX: Guard against missing API key
+    if (!GEMINI_URL) {
+      setChatLoading(false);
+      return 'AI assistant is not configured. For immediate safety, call emergency services (112) or a trusted person.';
+    }
 
     try {
       const response = await fetch(GEMINI_URL, {
@@ -94,9 +102,12 @@ export function SafetyScreen({ onSOS }) {
         })
       });
 
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
       const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || 'I understand this is difficult. Please stay calm and focus on your immediate safety. Consider calling a trusted friend or emergency services.';
-    } catch {
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ||
+        'I understand this is difficult. Please stay calm and focus on your immediate safety. Consider calling a trusted friend or emergency services.';
+    } catch (err) {
+      console.error('Gemini AI error:', err);
       return 'I am here to help. For immediate safety, please call emergency services (112) or a trusted person. You are not alone.';
     } finally {
       setChatLoading(false);
