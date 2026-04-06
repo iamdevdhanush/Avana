@@ -114,6 +114,20 @@ async function geocodeAddress(query) {
   }
 }
 
+// ─── Map Ready Listener ──────────────────────────────────────────────────────
+function MapReadyListener({ onReady }) {
+  const map = useMap();
+  useEffect(() => {
+    // whenReady fires after first tile paint
+    map.whenReady(() => {
+      // small delay so heatmap also has time to render
+      setTimeout(onReady, 300);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+  return null;
+}
+
 // ─── Map Sub-Components (memoized to prevent rerenders) ───────────────────────
 
 const HeatmapLayer = memo(({ points }) => {
@@ -240,6 +254,7 @@ function buildColoredSegments(coords, reports) {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function MapScreen({ user }) {
+  const [mapReady, setMapReady] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [showRoutePanel, setShowRoutePanel] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
@@ -441,6 +456,34 @@ export function MapScreen({ user }) {
 
   return (
     <div className="map-screen">
+      {/* ── Professional loading skeleton ─── */}
+      {!mapReady && (
+        <div className="map-skeleton">
+          <div className="map-skeleton__header">
+            <div className="skeleton-bar" style={{ width: 120, height: 20 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+              <div className="skeleton-bar" style={{ width: 70, height: 24, borderRadius: 20 }} />
+              <div className="skeleton-bar" style={{ width: 130, height: 28, borderRadius: 8 }} />
+            </div>
+          </div>
+          <div className="map-skeleton__map">
+            <div className="map-skeleton__pin">
+              <div className="map-skeleton__pin-ring" />
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5">
+                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            </div>
+            <p className="map-skeleton__label">Loading Safety Map…</p>
+          </div>
+          <div className="map-skeleton__controls">
+            <div className="skeleton-bar" style={{ flex: 1, height: 50, borderRadius: 12 }} />
+            <div className="skeleton-bar" style={{ flex: 1, height: 50, borderRadius: 12 }} />
+          </div>
+        </div>
+      )}
+
+      <div className={`map-ready-wrapper ${mapReady ? 'visible' : ''}`}>
       <div className="map-header">
         <h1 className="page-title">Safety Map</h1>
         <div className="map-header-right">
@@ -472,6 +515,7 @@ export function MapScreen({ user }) {
           {routeResult?.destCoords && <DestinationMarker position={routeResult.destCoords} />}
           {selectedLocation && !routeResult && <DestinationMarker position={[selectedLocation.lat, selectedLocation.lng]} />}
           <MapClickHandler onMapClick={handleMapClick} />
+          <MapReadyListener onReady={() => setMapReady(true)} />
           {/* Live re-center when user location first arrives */}
           {userLocation && <MapCenterer center={userLocation} />}
 
@@ -624,6 +668,7 @@ export function MapScreen({ user }) {
           </div>
         </div>
       )}
+      </div>{/* end map-ready-wrapper */}
     </div>
   );
 }
