@@ -8,7 +8,7 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { ConsentScreen } from './screens/ConsentScreen';
 import { NavigationBar } from './components/NavigationBar';
-import { getSession, onAuthStateChange, signOut } from './services/supabase';
+import { onAuthChange, signOut } from './services/firebaseAuth';
 import './App.css';
 
 function App() {
@@ -18,40 +18,22 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkUser();
-    
-    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
+    const unsubscribe = onAuthChange((firebaseUser) => {
+      if (firebaseUser) {
         setUser({
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.email?.split('@')[0] || 'User'
+          id: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User'
         });
-      } else if (event === 'SIGNED_OUT') {
+      } else {
         setUser(null);
         setGuardianMode(false);
       }
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
-
-  const checkUser = async () => {
-    try {
-      const session = await getSession();
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.email?.split('@')[0] || 'User'
-        });
-      }
-    } catch (error) {
-      console.error('Error checking user:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleLogin = (userData) => {
     setUser(userData);

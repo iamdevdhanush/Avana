@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase, signIn, signUp } from '../services/supabase';
+import { signIn, signUp } from '../services/firebaseAuth';
 import './LoginScreen.css';
 
 export function LoginScreen({ onLogin, onAuthError }) {
@@ -18,54 +18,45 @@ export function LoginScreen({ onLogin, onAuthError }) {
 
     try {
       if (isLogin) {
-        const { data, error } = await signIn(email, password);
-        if (error) throw error;
-        if (data?.user) {
-          onLogin({ 
-            id: data.user.id, 
-            email: data.user.email,
-            name: data.user.email.split('@')[0] 
-          });
-        }
+        const userCredential = await signIn(email, password);
+        const user = userCredential.user;
+        onLogin({ 
+          id: user.uid, 
+          email: user.email,
+          name: user.displayName || user.email.split('@')[0] 
+        });
       } else {
-        const { data, error } = await signUp(email, password);
-        if (error) throw error;
-        
-        if (data.user && !data.session) {
-          setSuccessMessage('Account created! Check your email to confirm.');
-          setIsLogin(true);
-        } else if (data.session) {
-          onLogin({ 
-            id: data.user.id, 
-            email: data.user.email,
-            name: data.user.email.split('@')[0] 
-          });
-        }
+        await signUp(email, password);
+        setSuccessMessage('Account created successfully! You can now sign in.');
+        setIsLogin(true);
+        setPassword('');
       }
     } catch (err) {
-      setError(err.message || 'Authentication failed');
-      if (onAuthError) onAuthError(err.message);
+      let errorMessage = 'Authentication failed';
+      if (err.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      } else if (err.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (err.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (err.code === 'auth/email-already-in-use') {
+        errorMessage = 'Email already in use';
+      } else if (err.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters';
+      } else if (err.code === 'auth/user-disabled') {
+        errorMessage = 'This account has been disabled';
+      } else {
+        errorMessage = err.message || 'Authentication failed';
+      }
+      setError(errorMessage);
+      if (onAuthError) onAuthError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (err) {
-      setError(err.message || 'Google sign-in failed');
-      setLoading(false);
-    }
+    setError('Google sign-in requires additional Firebase configuration');
   };
 
   return (
