@@ -68,6 +68,20 @@ body {
 }
 
 /* Navigation Bar */
+.install-banner {
+  background: var(--bg-card);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+}
+.install-banner p {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
 .nav-bar {
   height: 64px;
   background: var(--bg-secondary);

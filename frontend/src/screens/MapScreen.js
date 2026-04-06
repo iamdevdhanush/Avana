@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { MapContainer, TileLayer, useMapEvents, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet.heat';
 import { 
@@ -27,6 +27,19 @@ const DEFAULT_HEATMAP = [
   [12.9300, 77.5700, 0.75]
 ];
 
+const CRIME_DATA = [
+  { lat: 12.9716, lng: 77.5946, weight: 0.9, type: 'high_crime' },
+  { lat: 12.9352, lng: 77.6245, weight: 0.85, type: 'high_crime' },
+  { lat: 12.9585, lng: 77.6091, weight: 0.6, type: 'medium_crime' },
+  { lat: 12.9450, lng: 77.5872, weight: 0.8, type: 'high_crime' },
+  { lat: 12.9700, lng: 77.5800, weight: 0.75, type: 'high_crime' },
+  { lat: 12.9300, lng: 77.5700, weight: 0.7, type: 'high_crime' },
+  { lat: 12.9750, lng: 77.6050, weight: 0.5, type: 'medium_crime' },
+  { lat: 12.9880, lng: 77.5500, weight: 0.4, type: 'low_crime' },
+  { lat: 12.9784, lng: 77.6408, weight: 0.2, type: 'low_crime' },
+  { lat: 12.9530, lng: 77.6145, weight: 0.25, type: 'low_crime' }
+];
+
 const REPORT_TYPES = [
   { id: 'unsafe_area', label: 'Unsafe Area', icon: '⚠️', severity: 'high' },
   { id: 'harassment', label: 'Harassment', icon: '👥', severity: 'high' },
@@ -35,6 +48,120 @@ const REPORT_TYPES = [
   { id: 'assault', label: 'Assault', icon: '🚨', severity: 'high' },
   { id: 'other', label: 'Other', icon: '📍', severity: 'low' }
 ];
+
+export function calculateSafetyScore(lat, lng, reports = [], events = []) {
+  const hour = new Date().getHours();
+  const isNight = hour >= 21 || hour < 6;
+  const isEvening = hour >= 18 || hour < 22;
+  
+  let score = 100;
+  let factors = [];
+  
+  for (const crime of CRIME_DATA) {
+    const distance = Math.sqrt(Math.pow(lat - crime.lat, 2) + Math.pow(lng - crime.lng, 2));
+    if (distance < 0.02) {
+      score -= crime.weight * 30;
+      factors.push('Near high crime area');
+    } else if (distance < 0.05) {
+      score -= crime.weight * 15;
+    }
+  }
+  
+  for (const report of reports) {
+    const distance = Math.sqrt(Math.pow(lat - report.lat, 2) + Math.pow(lng - report.lng, 2));
+    if (distance < 0.02) {
+      const severity = report.severity === 'high' ? 25 : report.severity === 'medium' ? 15 : 8;
+      score -= severity;
+      factors.push('Community report: ' + report.type);
+    }
+  }
+  
+  for (const event of events) {
+    const distance = Math.sqrt(Math.pow(lat - event.lat, 2) + Math.pow(lng - event.lng, 2));
+    if (distance < 0.02) {
+      const severity = event.risk_level === 'HIGH' ? 20 : event.risk_level === 'MEDIUM' ? 10 : 5;
+      score -= severity;
+    }
+  }
+  
+  if (isNight) {
+    score -= 20;
+    factors.push('Nighttime - reduced visibility');
+  } else if (isEvening) {
+    score -= 10;
+    factors.push('Evening hours');
+  }
+  
+  score = Math.max(0, Math.min(100, score));
+  
+  let riskLevel = 'LOW';
+  let color = '#00C853';
+  
+  if (score >= 70) {
+    riskLevel = 'LOW';
+    color = '#00C853';
+  } else if (score >= 40) {
+    riskLevel = 'MEDIUM';
+    color = '#FFD600';
+  } else {
+    riskLevel = 'HIGH';
+    color = '#FF3D00';
+  }
+  
+  return { score, riskLevel, color, factors: factors.slice(0, 3) };
+}
+
+export async function fetchOSRMRoute(start, end) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        geometry: route.geometry.coordinates.map(coord => [coord[1], coord[0]])
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error('OSRM routing error:', err);
+    return null;
+  }
+}
+
+function calculateRouteSafety(routeCoords, reports = [], events = []) {
+  if (!routeCoords || routeCoords.length === 0) return { avgScore: 50, segments: [] };
+  
+  const step = Math.max(1, Math.floor(routeCoords.length / 20));
+  let totalScore = 0;
+  let count = 0;
+  const scoredSegments = [];
+  
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+     const p1 = routeCoords[i];
+     const p2 = routeCoords[i+1];
+     let score = 100;
+     
+     if (i % step === 0) {
+        const result = calculateSafetyScore(p1[0], p1[1], reports, events);
+        score = result.score;
+        totalScore += score;
+        count++;
+     } else if (scoredSegments.length > 0) {
+        score = scoredSegments[scoredSegments.length - 1].score;
+     }
+
+     const color = score >= 70 ? '#00C853' : score >= 40 ? '#FFD600' : '#FF3D00';
+     scoredSegments.push({ p1: [p1[0], p1[1]], p2: [p2[0], p2[1]], score, color });
+  }
+  
+  const avgScore = count > 0 ? (totalScore / count) : 50;
+  
+  return { avgScore, segments: scoredSegments };
+}
 
 function HeatmapLayer({ points }) {
   const map = useMap();
@@ -288,16 +415,56 @@ export function MapScreen({ user }) {
     }
   };
 
-  const handleFindRoute = () => {
+  const handleFindRoute = async () => {
+    if (!userLocation) {
+      alert('Location not available');
+      return;
+    }
+    
     setRouteFinding(true);
-    setTimeout(() => {
+    setRouteResult(null);
+    
+    try {
+      const start = userLocation;
+      const dest = selectedLocation ? [selectedLocation.lat, selectedLocation.lng] : null;
+      
+      if (!dest) {
+        setRouteFinding(false);
+        return;
+      }
+      
+      const routeData = await fetchOSRMRoute(start, dest);
+      
+      if (routeData) {
+        const safetyAnalysis = calculateRouteSafety(routeData.geometry, communityReports, []);
+        
+        setRouteResult({
+          safe: safetyAnalysis.avgScore >= 50,
+          time: Math.round(routeData.duration / 60),
+          distance: (routeData.distance / 1000).toFixed(1),
+          geometry: routeData.geometry,
+          safetyScore: Math.round(safetyAnalysis.avgScore),
+          segments: safetyAnalysis.segments
+        });
+      } else {
+        setRouteResult({
+          safe: Math.random() > 0.4,
+          time: Math.floor(Math.random() * 20) + 10,
+          distance: (Math.random() * 4 + 1).toFixed(1),
+          fallback: true
+        });
+      }
+    } catch (err) {
+      console.error('Route error:', err);
       setRouteResult({
-        safe: Math.random() > 0.4,
-        time: Math.floor(Math.random() * 20) + 10,
-        distance: (Math.random() * 4 + 1).toFixed(1)
+        safe: true,
+        time: 15,
+        distance: 3.2,
+        fallback: true
       });
-      setRouteFinding(false);
-    }, 1500);
+    }
+    
+    setRouteFinding(false);
   };
 
   const handleReportSubmit = async () => {
@@ -382,6 +549,16 @@ export function MapScreen({ user }) {
             <CommunityMarkers reports={communityReports} />
             <UserMarker position={userLocation} />
             <MapClickHandler onMapClick={handleMapClick} />
+            
+            {routeResult && routeResult.segments && routeResult.segments.map((seg, i) => (
+               <Polyline 
+                 key={i} 
+                 positions={[seg.p1, seg.p2]} 
+                 color={seg.color} 
+                 weight={5} 
+                 opacity={0.8}
+               />
+            ))}
           </MapContainer>
         )}
       </div>
@@ -488,12 +665,12 @@ export function MapScreen({ user }) {
             
             <div className="input-group">
               <label className="input-label">From</label>
-              <input type="text" className="input-field" placeholder="Current location" defaultValue="Current Location" />
+              <input type="text" className="input-field" disabled value="Current Location" />
             </div>
             
             <div className="input-group">
               <label className="input-label">To</label>
-              <input type="text" className="input-field" placeholder="Enter destination" />
+              <input type="text" className="input-field" disabled value={selectedLocation ? `Dest: ${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lng.toFixed(4)}` : 'Tap on the map to select destination'} />
             </div>
             
             <button className="btn btn-primary btn-block" onClick={handleFindRoute} disabled={routeFinding}>

@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { signIn, signUp } from '../services/firebaseAuth';
+import { saveUserProfile } from '../services/supabase';
 import './LoginScreen.css';
 
 export function LoginScreen({ onLogin, onAuthError }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [age, setAge] = useState('');
+  const [guardianPhone, setGuardianPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -26,10 +29,31 @@ export function LoginScreen({ onLogin, onAuthError }) {
           name: user.displayName || user.email.split('@')[0] 
         });
       } else {
-        await signUp(email, password);
+        if (!age || isNaN(age)) {
+          setError('Please enter a valid age');
+          setLoading(false);
+          return;
+        }
+        if (parseInt(age, 10) < 18 && !guardianPhone) {
+          setError('Guardian phone number is required for users under 18');
+          setLoading(false);
+          return;
+        }
+
+        const userCredential = await signUp(email, password, email.split('@')[0]);
+        await saveUserProfile({
+          id: userCredential.user.uid,
+          name: email.split('@')[0],
+          age: parseInt(age, 10),
+          phone: '',
+          guardian_phone: parseInt(age, 10) < 18 ? guardianPhone : null,
+        });
+
         setSuccessMessage('Account created successfully! You can now sign in.');
         setIsLogin(true);
         setPassword('');
+        setAge('');
+        setGuardianPhone('');
       }
     } catch (err) {
       let errorMessage = 'Authentication failed';
@@ -110,6 +134,35 @@ export function LoginScreen({ onLogin, onAuthError }) {
               minLength={6}
             />
           </div>
+
+          {!isLogin && (
+            <>
+              <div className="input-group">
+                <input
+                  type="number"
+                  className="input-field"
+                  placeholder="Age"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  required={!isLogin}
+                  min="1"
+                  max="120"
+                />
+              </div>
+              {age && parseInt(age, 10) < 18 && (
+                <div className="input-group">
+                  <input
+                    type="tel"
+                    className="input-field"
+                    placeholder="Guardian's Phone Number"
+                    value={guardianPhone}
+                    onChange={(e) => setGuardianPhone(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+            </>
+          )}
 
           {isLogin && (
             <button type="button" className="forgot-link">

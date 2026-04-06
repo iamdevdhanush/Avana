@@ -84,12 +84,16 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
               eventType: 'sos_triggered',
               description: 'Emergency SOS triggered'
             });
+            onSOS({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           },
-          () => {}
+          () => {
+            onSOS(null);
+          }
         );
+      } else {
+        onSOS(null);
       }
       
-      onSOS();
       setSosConfirm(false);
       loadAnalytics();
     } else {

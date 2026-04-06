@@ -9,6 +9,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { ConsentScreen } from './screens/ConsentScreen';
 import { NavigationBar } from './components/NavigationBar';
 import { onAuthChange, signOut } from './services/firebaseAuth';
+import { createOrGetUserProfile, requiresGuardianPhone } from './services/userProfileService';
 import './App.css';
 
 function App() {
@@ -16,15 +17,43 @@ function App() {
   const [guardianMode, setGuardianMode] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthChange((firebaseUser) => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    const unsubscribe = onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
-        setUser({
-          id: firebaseUser.uid,
-          email: firebaseUser.email,
-          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User'
-        });
+        try {
+          // Get or create user profile in Supabase
+          const profile = await createOrGetUserProfile(firebaseUser);
+          
+          setUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: profile.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            age: profile.age,
+            phone: profile.phone,
+            guardian_phone: profile.guardian_phone
+          });
+          
+          // Check if user needs guardian mode (age < 18)
+          const needsGuardian = await requiresGuardianPhone(firebaseUser.uid);
+          setGuardianMode(needsGuardian);
+        } catch (error) {
+          console.error('Error setting up user profile:', error);
+          // Fallback to basic user data
+          setUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User'
+          });
+          setGuardianMode(false);
+        }
       } else {
         setUser(null);
         setGuardianMode(false);
@@ -32,8 +61,21 @@ function App() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      window.removeEventListener('beforeinstallprompt', () => {});
+    };
   }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -45,8 +87,20 @@ function App() {
     setGuardianMode(false);
   };
 
-  const handleSOS = () => {
+  const handleSOS = (location) => {
     setSosTriggered(true);
+    
+    // Simulate SMS dispatch
+    let messageTo = (user && guardianMode && user.guardian_phone) 
+       ? `Guardian (${user.guardian_phone})` 
+       : 'Emergency Contacts and Authorities';
+       
+    console.log(`🚨 [SOS SYSTEM] Alert dispatched to: ${messageTo}`);
+    console.log(`🚨 Time: ${new Date().toLocaleString()}`);
+    if (location) {
+      console.log(`🚨 Live Location: https://maps.google.com/?q=${location.lat},${location.lng}`);
+    }
+
     setTimeout(() => setSosTriggered(false), 5000);
   };
 
@@ -82,6 +136,12 @@ function App() {
 
   return (
     <div className="app-container">
+      {deferredPrompt && (
+        <div className="install-banner">
+           <p>Install Avana for a better mobile experience</p>
+           <button onClick={handleInstallClick} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '13px' }}>Install</button>
+        </div>
+      )}
       <div className="screen-container">
         <Routes location={location}>
           <Route path="/" element={<HomeScreen onSOS={handleSOS} sosTriggered={sosTriggered} user={user} />} />
