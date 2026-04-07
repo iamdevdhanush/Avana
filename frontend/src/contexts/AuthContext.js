@@ -6,7 +6,8 @@ import {
   signOut as firebaseSignOut,
   updateProfile,
   signInWithPopup,
-  GoogleAuthProvider
+  GoogleAuthProvider,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { auth } from '../firebase';
 import { createOrGetUserProfile } from '../services/userProfileService';
@@ -226,6 +227,17 @@ export function AuthProvider({ children }) {
     }
   }, [clearConsent]);
 
+  // ── Password Reset ─────────────────────────────────────────────────────────────
+  const sendPasswordReset = useCallback(async (email) => {
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
   const value = {
     user,
     profile,
@@ -236,6 +248,7 @@ export function AuthProvider({ children }) {
     loginWithGoogle,
     signupWithEmail,
     logout,
+    sendPasswordReset,
     setConsent,
     clearConsent,
     hasConsent

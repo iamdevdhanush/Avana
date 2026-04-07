@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import './LoginScreen.css';
 
 export function LoginScreen() {
-  const { loginWithEmail, loginWithGoogle, signupWithEmail, loading: authLoading, error: authError } = useAuth();
+  const { loginWithEmail, loginWithGoogle, signupWithEmail, sendPasswordReset, loading: authLoading, error: authError } = useAuth();
   
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -14,17 +14,56 @@ export function LoginScreen() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
   useEffect(() => {
     if (authError) {
       setError(authError);
     }
   }, [authError]);
 
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validateInputs = () => {
+    let isValid = true;
+    setError('');
+
+    if (!email.trim()) {
+      setError('Email is required');
+      isValid = false;
+    } else if (!validateEmail(email)) {
+      setError('Please enter a valid email');
+      isValid = false;
+    }
+
+    if (!password && isLogin) {
+      setError('Password is required');
+      isValid = false;
+    } else if (password && password.length < 6) {
+      setError('Password must be at least 6 characters');
+      isValid = false;
+    }
+
+    return isValid;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setSuccessMessage('');
+
+    if (!validateInputs()) {
+      setLoading(false);
+      return;
+    }
 
     try {
       if (isLogin) {
@@ -48,35 +87,36 @@ export function LoginScreen() {
           guardian_phone: parseInt(age, 10) < 18 ? guardianPhone : null
         });
 
-        setSuccessMessage('Account created successfully!');
+        setSuccessMessage('Account created successfully! Please check your email to verify.');
         setIsLogin(true);
         setPassword('');
         setAge('');
         setGuardianPhone('');
       }
     } catch (err) {
-      let errorMessage = 'Authentication failed';
-      if (err.code === 'auth/invalid-email') {
+      console.error('Auth error:', err);
+      let errorMessage = 'Something went wrong. Please try again.';
+      
+      if (err.code === 'auth/invalid-email' || err.message?.includes('invalid-email')) {
         errorMessage = 'Invalid email address';
-      } else if (err.code === 'auth/wrong-password') {
+      } else if (err.code === 'auth/wrong-password' || err.message?.includes('wrong-password')) {
         errorMessage = 'Incorrect password';
-      } else if (err.code === 'auth/user-not-found') {
+      } else if (err.code === 'auth/user-not-found' || err.message?.includes('user-not-found')) {
         errorMessage = 'No account found with this email';
-      } else if (err.code === 'auth/email-already-in-use') {
-        errorMessage = 'Email already in use';
-      } else if (err.code === 'auth/weak-password') {
+      } else if (err.code === 'auth/email-already-in-use' || err.message?.includes('email-already-in-use')) {
+        errorMessage = 'An account already exists with this email';
+      } else if (err.code === 'auth/weak-password' || err.message?.includes('weak-password')) {
         errorMessage = 'Password should be at least 6 characters';
       } else if (err.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled';
-      } else if (err.code === 'auth/popup-closed-by-user') {
+      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         errorMessage = 'Sign-in was cancelled';
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        errorMessage = 'Only one popup allowed at a time';
-      } else if (err.code === 'auth/account-exists-with-different-credential') {
-        errorMessage = 'An account already exists with a different sign-in method';
+      } else if (err.code === 'auth/network-request-failed' || err.message?.includes('network')) {
+        errorMessage = 'Network error. Please check your connection.';
       } else if (err.message) {
         errorMessage = err.message;
       }
+      
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -91,21 +131,60 @@ export function LoginScreen() {
     try {
       await loginWithGoogle();
     } catch (err) {
+      console.error('Google auth error:', err);
       let errorMessage = 'Google sign-in failed';
-      if (err.code === 'auth/popup-closed-by-user') {
+      
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         errorMessage = 'Sign-in was cancelled';
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        errorMessage = 'Only one popup allowed at a time';
       } else if (err.code === 'auth/operation-not-allowed') {
-        errorMessage = 'Google sign-in is not enabled. Please contact support.';
+        errorMessage = 'Google sign-in is not enabled';
       } else if (err.code === 'auth/unauthorized-domain') {
-        errorMessage = 'This domain is not authorized for Google sign-in.';
+        errorMessage = 'This domain is not authorized for Google sign-in';
+      } else if (err.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Please try again.';
       } else if (err.message) {
         errorMessage = err.message;
       }
+      
       setError(errorMessage);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!resetEmail.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+    if (!validateEmail(resetEmail)) {
+      setError('Please enter a valid email');
+      return;
+    }
+
+    setResetLoading(true);
+    setError('');
+
+    try {
+      await sendPasswordReset(resetEmail);
+      setResetSent(true);
+    } catch (err) {
+      console.error('Password reset error:', err);
+      let errorMessage = 'Could not send reset email';
+      
+      if (err.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      } else if (err.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (err.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Please try again.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -210,7 +289,7 @@ export function LoginScreen() {
           )}
 
           {isLogin && (
-            <button type="button" className="forgot-link">
+            <button type="button" className="forgot-link" onClick={() => { setShowForgotPassword(true); setError(''); }}>
               Forgot password?
             </button>
           )}
@@ -262,6 +341,46 @@ export function LoginScreen() {
           <span>Terms of Service</span> and <span>Privacy Policy</span>
         </p>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <div className="forgot-password-overlay">
+          <div className="forgot-password-modal">
+            <h2>Reset Password</h2>
+            <p>Enter your email address and we'll send you a link to reset your password.</p>
+            
+            {resetSent ? (
+              <div className="success-message">
+                Password reset link sent! Check your email.
+              </div>
+            ) : (
+              <>
+                <input
+                  type="email"
+                  className="input-field"
+                  placeholder="Email address"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                />
+                <button 
+                  className="btn btn-primary btn-block"
+                  onClick={handleForgotPassword}
+                  disabled={resetLoading}
+                >
+                  {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+              </>
+            )}
+            
+            <button 
+              className="forgot-password-close"
+              onClick={() => { setShowForgotPassword(false); setResetEmail(''); setResetSent(false); setError(''); }}
+            >
+              Back to Login
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
