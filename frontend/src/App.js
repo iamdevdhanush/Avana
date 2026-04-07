@@ -8,11 +8,9 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { ConsentScreen } from './screens/ConsentScreen';
 import { NavigationBar } from './components/NavigationBar';
-import { onAuthChange, signOut } from './services/firebaseAuth';
-import { createOrGetUserProfile } from './services/userProfileService';
+import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
-// BUG FIX: Added global error boundary to prevent white screen on crash
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -38,61 +36,20 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [consentGiven, setConsentGiven] = useState(false);
+function AppContent() {
+  const { user, loading: authLoading, consentGiven, setConsent, logout } = useAuth();
   const [sosTriggered, setSosTriggered] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-
-  // BUG FIX: Store handler ref to properly remove event listener
   const installPromptHandlerRef = useRef(null);
 
   useEffect(() => {
-    // BUG FIX: Store the handler in ref so it can be properly removed
     installPromptHandlerRef.current = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', installPromptHandlerRef.current);
 
-    const unsubscribe = onAuthChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const profile = await createOrGetUserProfile(firebaseUser);
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: profile?.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-            age: profile?.age,
-            phone: profile?.phone,
-            guardian_phone: profile?.guardian_phone
-          });
-
-          // BUG FIX: Guardian mode is now stored in localStorage per user session
-          // so consentGiven persists across page refreshes
-          const consentKey = `avana_consent_${firebaseUser.uid}`;
-          const hasConsent = localStorage.getItem(consentKey) === 'true';
-          setConsentGiven(hasConsent);
-        } catch (error) {
-          console.error('Error setting up user profile:', error);
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User'
-          });
-          setConsentGiven(false);
-        }
-      } else {
-        setUser(null);
-        setConsentGiven(false);
-      }
-      setLoading(false);
-    });
-
     return () => {
-      unsubscribe();
-      // BUG FIX: Properly remove the event listener using the stored reference
       if (installPromptHandlerRef.current) {
         window.removeEventListener('beforeinstallprompt', installPromptHandlerRef.current);
       }
@@ -113,28 +70,17 @@ function App() {
     }
   };
 
-  const handleLogin = (userData) => {
-    setUser(userData);
-  };
-
   const handleLogout = async () => {
     try {
-      await signOut();
-      // BUG FIX: Clear consent only on explicit logout
-      if (user?.id) {
-        localStorage.removeItem(`avana_consent_${user.id}`);
-      }
+      await logout();
     } catch (err) {
       console.error('Sign out error:', err);
     }
-    setUser(null);
-    setConsentGiven(false);
   };
 
   const handleSOS = (location) => {
     setSosTriggered(true);
 
-    // Determine recipient: guardian if they have one, else emergency contacts
     const guardianPhone = user?.guardian_phone;
     const messageTo = guardianPhone
       ? `Guardian (${guardianPhone})`
@@ -146,7 +92,6 @@ function App() {
       console.log(`🚨 Live Location: https://maps.google.com/?q=${location.lat},${location.lng}`);
     }
 
-    // BUG FIX: Also trigger the backend SOS API for server-side logging
     if (location && user?.id) {
       const apiBase = process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL.replace(/\/$/, '') : 'http://localhost:5000';
       fetch(`${apiBase}/sos`, {
@@ -160,16 +105,12 @@ function App() {
   };
 
   const handleConsentEnable = () => {
-    // BUG FIX: Persist consent so it survives page refresh
-    if (user?.id) {
-      localStorage.setItem(`avana_consent_${user.id}`, 'true');
-    }
-    setConsentGiven(true);
+    setConsent(true);
   };
 
   const location = useLocation();
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="app-loading">
         <div className="loading-spinner"></div>
@@ -182,7 +123,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Routes>
-          <Route path="/" element={<LoginScreen onLogin={handleLogin} />} />
+          <Route path="/" element={<LoginScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ErrorBoundary>
@@ -240,6 +181,10 @@ function App() {
       </div>
     </ErrorBoundary>
   );
+}
+
+function App() {
+  return <AppContent />;
 }
 
 export default App;

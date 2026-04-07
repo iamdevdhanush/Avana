@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyD5czTSvV7meNiWDwCXCRnWUbrd89OFSn4",
@@ -13,3 +13,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.warn('Firebase persistence error:', err);
+});

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { signIn, signUp } from '../services/firebaseAuth';
-import { saveUserProfile } from '../services/supabase';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import './LoginScreen.css';
 
-export function LoginScreen({ onLogin, onAuthError }) {
+export function LoginScreen() {
+  const { loginWithEmail, loginWithGoogle, signupWithEmail, loading: authLoading, error: authError } = useAuth();
+  
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,6 +14,12 @@ export function LoginScreen({ onLogin, onAuthError }) {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+    }
+  }, [authError]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -21,13 +28,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
 
     try {
       if (isLogin) {
-        const userCredential = await signIn(email, password);
-        const user = userCredential.user;
-        onLogin({ 
-          id: user.uid, 
-          email: user.email,
-          name: user.displayName || user.email.split('@')[0] 
-        });
+        await loginWithEmail(email, password);
       } else {
         if (!age || isNaN(age)) {
           setError('Please enter a valid age');
@@ -40,16 +41,14 @@ export function LoginScreen({ onLogin, onAuthError }) {
           return;
         }
 
-        const userCredential = await signUp(email, password, email.split('@')[0]);
-        await saveUserProfile({
-          id: userCredential.user.uid,
+        await signupWithEmail(email, password, {
           name: email.split('@')[0],
           age: parseInt(age, 10),
           phone: '',
-          guardian_phone: parseInt(age, 10) < 18 ? guardianPhone : null,
+          guardian_phone: parseInt(age, 10) < 18 ? guardianPhone : null
         });
 
-        setSuccessMessage('Account created successfully! You can now sign in.');
+        setSuccessMessage('Account created successfully!');
         setIsLogin(true);
         setPassword('');
         setAge('');
@@ -69,19 +68,71 @@ export function LoginScreen({ onLogin, onAuthError }) {
         errorMessage = 'Password should be at least 6 characters';
       } else if (err.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled';
-      } else {
-        errorMessage = err.message || 'Authentication failed';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Sign-in was cancelled';
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Only one popup allowed at a time';
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+        errorMessage = 'An account already exists with a different sign-in method';
+      } else if (err.message) {
+        errorMessage = err.message;
       }
       setError(errorMessage);
-      if (onAuthError) onAuthError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setError('Google sign-in requires additional Firebase configuration');
+    setLoading(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      let errorMessage = 'Google sign-in failed';
+      if (err.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Sign-in was cancelled';
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Only one popup allowed at a time';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMessage = 'Google sign-in is not enabled. Please contact support.';
+      } else if (err.code === 'auth/unauthorized-domain') {
+        errorMessage = 'This domain is not authorized for Google sign-in.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (authLoading) {
+    return (
+      <div className="login-screen">
+        <div className="login-content">
+          <div className="login-header">
+            <div className="logo">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="24" r="22" stroke="#00C853" strokeWidth="2.5" fill="rgba(0, 200, 83, 0.1)"/>
+                <path d="M24 12L32 18V30C32 36 24 42 24 42C24 42 16 36 16 30V18L24 12Z" 
+                      stroke="#00C853" strokeWidth="2" fill="none"/>
+                <circle cx="24" cy="26" r="4" fill="#00C853"/>
+              </svg>
+            </div>
+            <h1>Avana</h1>
+            <p>Your personal safety companion</p>
+          </div>
+          <div className="auth-loading">
+            <div className="loading-spinner"></div>
+            <p>Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-screen">
@@ -120,6 +171,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
 
@@ -132,6 +184,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
+              disabled={loading}
             />
           </div>
 
@@ -147,6 +200,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
                   required={!isLogin}
                   min="1"
                   max="120"
+                  disabled={loading}
                 />
               </div>
               {age && parseInt(age, 10) < 18 && (
@@ -158,6 +212,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
                     value={guardianPhone}
                     onChange={(e) => setGuardianPhone(e.target.value)}
                     required
+                    disabled={loading}
                   />
                 </div>
               )}
@@ -206,6 +261,7 @@ export function LoginScreen({ onLogin, onAuthError }) {
               setError('');
               setSuccessMessage('');
             }}
+            disabled={loading}
           >
             {isLogin ? 'Sign Up' : 'Sign In'}
           </button>
