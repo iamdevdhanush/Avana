@@ -327,12 +327,15 @@ export async function triggerSOSAlert(alert) {
 
 export async function saveCommunityPost(post) {
   try {
+    const locationValue = post.location
+      ? (typeof post.location === 'string' ? post.location : JSON.stringify(post.location))
+      : null;
     const { data, error } = await supabase
       .from('community_posts')
       .insert([{
         user_id: post.userId,
         content: post.content,
-        location: post.location || null
+        location: locationValue
       }])
       .select();
     
@@ -345,11 +348,23 @@ export async function saveCommunityPost(post) {
 
 export async function getCommunityPosts(limit = 50) {
   try {
+    // Try with user_profiles FK join first
     const { data, error } = await supabase
       .from('community_posts')
       .select('*, user_profiles(name)')
       .order('created_at', { ascending: false })
       .limit(limit);
+    
+    // If FK join fails (400), retry without it
+    if (error && (error.code === '400' || error.message?.includes('relation') || error.code === 'PGRST200')) {
+      console.warn('getCommunityPosts: FK join failed, falling back to plain select');
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('community_posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return { data: fallbackData, error: fallbackError };
+    }
     
     return { data, error };
   } catch (err) {
@@ -388,11 +403,23 @@ export async function saveComment(comment) {
 
 export async function getComments(postId) {
   try {
+    // Try with user_profiles FK join first
     const { data, error } = await supabase
       .from('post_comments')
       .select('*, user_profiles(name)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
+    
+    // If FK join fails, retry without it
+    if (error && (error.code === '400' || error.message?.includes('relation') || error.code === 'PGRST200')) {
+      console.warn('getComments: FK join failed, falling back to plain select');
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+      return { data: fallbackData, error: fallbackError };
+    }
     
     return { data, error };
   } catch (err) {

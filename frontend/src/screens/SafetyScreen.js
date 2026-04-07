@@ -151,6 +151,8 @@ export function SafetyScreen({ onSOS, user }) {
   };
 
   const handleSOSClick = () => {
+    // CRITICAL: Immediately trigger phone call to emergency number
+    window.location.href = 'tel:+917624828817';
     if (onSOS) onSOS();
   };
 

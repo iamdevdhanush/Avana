@@ -214,9 +214,11 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
 
     if (emergencyContacts.length > 0) {
       const contact = emergencyContacts[0];
-      const phone = contact.phone.replace(/\D/g, '');
-      const waMessage = encodeURIComponent(message);
-      window.open(`https://wa.me/${phone}?text=${waMessage}`, '_blank');
+      const phone = contact?.phone?.replace(/\D/g, '');
+      if (phone) {
+        const waMessage = encodeURIComponent(message);
+        window.open(`https://wa.me/${phone}?text=${waMessage}`, '_blank');
+      }
     }
 
     try {
@@ -241,6 +243,10 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
 
   const handleSOSPress = async () => {
     if (sosConfirm) {
+      // CRITICAL: Immediately trigger phone call to emergency number
+      window.location.href = 'tel:+917624828817';
+
+      // Then run background SOS actions (non-blocking)
       const success = await sendSOS();
       if (success && onSOS) {
         onSOS({ lat: location.lat, lng: location.lng });

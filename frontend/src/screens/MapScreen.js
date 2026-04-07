@@ -228,9 +228,17 @@ function MapClickHandler({ onMapClick }) {
   return null;
 }
 
+// BUG FIX: One-shot centerer — only centers when user location first arrives,
+// then never auto-re-centers so the map stays draggable
 function MapCenterer({ center }) {
   const map = useMap();
-  useEffect(() => { if (center) map.setView(center, map.getZoom()); }, [center, map]);
+  const hasCenteredRef = useRef(false);
+  useEffect(() => {
+    if (center && !hasCenteredRef.current) {
+      map.setView(center, map.getZoom());
+      hasCenteredRef.current = true;
+    }
+  }, [center, map]);
   return null;
 }
 

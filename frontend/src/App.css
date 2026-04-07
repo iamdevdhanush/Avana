@@ -67,6 +67,23 @@ body {
   position: relative;
 }
 
+/* Tablet / Desktop max-width for mobile-first layout */
+@media (min-width: 768px) {
+  .app-container {
+    max-width: 480px;
+    margin: 0 auto;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-container {
+    max-width: 420px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
 /* Navigation Bar */
 .install-banner {
   background: var(--bg-card);
@@ -90,7 +107,7 @@ body {
   justify-content: space-around;
   align-items: center;
   padding: 0 8px;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .nav-item {

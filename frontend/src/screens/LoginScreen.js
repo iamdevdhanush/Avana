@@ -43,10 +43,10 @@ export function LoginScreen() {
       isValid = false;
     }
 
-    if (!password && isLogin) {
+    if (!password) {
       setError('Password is required');
       isValid = false;
-    } else if (password && password.length < 6) {
+    } else if (password.length < 6) {
       setError('Password must be at least 6 characters');
       isValid = false;
     }
@@ -99,8 +99,8 @@ export function LoginScreen() {
       
       if (err.code === 'auth/invalid-email' || err.message?.includes('invalid-email')) {
         errorMessage = 'Invalid email address';
-      } else if (err.code === 'auth/wrong-password' || err.message?.includes('wrong-password')) {
-        errorMessage = 'Incorrect password';
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.message?.includes('wrong-password') || err.message?.includes('invalid-credential')) {
+        errorMessage = 'Incorrect email or password';
       } else if (err.code === 'auth/user-not-found' || err.message?.includes('user-not-found')) {
         errorMessage = 'No account found with this email';
       } else if (err.code === 'auth/email-already-in-use' || err.message?.includes('email-already-in-use')) {
@@ -109,6 +109,8 @@ export function LoginScreen() {
         errorMessage = 'Password should be at least 6 characters';
       } else if (err.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled';
+      } else if (err.code === 'auth/too-many-requests' || err.message?.includes('too-many-requests')) {
+        errorMessage = 'Too many attempts. Please try again later.';
       } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         errorMessage = 'Sign-in was cancelled';
       } else if (err.code === 'auth/network-request-failed' || err.message?.includes('network')) {

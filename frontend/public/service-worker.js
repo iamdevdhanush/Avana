@@ -1,16 +1,17 @@
-const CACHE_NAME = 'avana-v1';
+const CACHE_NAME = 'avana-v2';
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/static/js/main.js',
-  '/static/css/main.css'
+  '/index.html'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        return cache.addAll(urlsToCache);
+        // Use addAll with a fallback — don't fail install if some static assets are missing
+        return cache.addAll(urlsToCache).catch((err) => {
+          console.warn('SW: Some cache items failed:', err);
+        });
       })
       .then(() => self.skipWaiting())
   );
@@ -31,30 +32,53 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  try {
-    // Don't cache API requests (Supabase, Firebase, etc.)
-    if (event.request.url.includes('/rest/v1') || 
-        event.request.url.includes('supabase') ||
-        event.request.url.includes('firebaseio') ||
-        event.request.url.includes('googleapis') ||
-        event.request.url.includes('auth') ||
-        event.request.url.includes('/api/')) {
-      return;
-    }
-    
+  const url = event.request.url;
+
+  // BUG FIX: Don't cache API requests — use event.respondWith(fetch()) instead of bare return
+  // A bare return does NOT prevent the subsequent respondWith from running
+  if (url.includes('/rest/v1') ||
+      url.includes('supabase') ||
+      url.includes('firebaseio') ||
+      url.includes('googleapis') ||
+      url.includes('identitytoolkit') ||
+      url.includes('securetoken') ||
+      url.includes('generativelanguage') ||
+      url.includes('/auth/') ||
+      url.includes('/api/')) {
     event.respondWith(
-      caches.match(event.request)
-        .then((response) => {
-          return response || fetch(event.request);
-        })
-        .catch(() => {
-          // Fallback to network if cache fails
-          return fetch(event.request);
-        })
+      fetch(event.request).catch((err) => {
+        console.warn('SW: Network request failed for API:', url, err);
+        return new Response(JSON.stringify({ error: 'Network unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      })
     );
-  } catch (error) {
-    console.error('Service Worker fetch error:', error);
-    // Fallback to network on any SW error
-    return fetch(event.request);
+    return;
   }
+
+  // For non-API requests: cache-first, fallback to network
+  event.respondWith(
+    caches.match(event.request)
+      .then((response) => {
+        if (response) return response;
+        return fetch(event.request).then((networkResponse) => {
+          // Cache successful GET responses
+          if (event.request.method === 'GET' && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        });
+      })
+      .catch(() => {
+        // Offline fallback for navigation requests
+        if (event.request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
+        return new Response('Offline', { status: 503 });
+      })
+  );
 });
