@@ -115,12 +115,7 @@ export function LoginScreen() {
         <div className="login-content">
           <div className="login-header">
             <div className="logo">
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="22" stroke="#00C853" strokeWidth="2.5" fill="rgba(0, 200, 83, 0.1)"/>
-                <path d="M24 12L32 18V30C32 36 24 42 24 42C24 42 16 36 16 30V18L24 12Z" 
-                      stroke="#00C853" strokeWidth="2" fill="none"/>
-                <circle cx="24" cy="26" r="4" fill="#00C853"/>
-              </svg>
+              <img src="/assets/logo.png" alt="Avana" width="48" height="48" />
             </div>
             <h1>Avana</h1>
             <p>Your personal safety companion</p>
@@ -139,12 +134,7 @@ export function LoginScreen() {
       <div className="login-content">
         <div className="login-header">
           <div className="logo">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="24" r="22" stroke="#00C853" strokeWidth="2.5" fill="rgba(0, 200, 83, 0.1)"/>
-              <path d="M24 12L32 18V30C32 36 24 42 24 42C24 42 16 36 16 30V18L24 12Z" 
-                    stroke="#00C853" strokeWidth="2" fill="none"/>
-              <circle cx="24" cy="26" r="4" fill="#00C853"/>
-            </svg>
+            <img src="/assets/logo.png" alt="Avana" width="48" height="48" />
           </div>
           <h1>Avana</h1>
           <p>Your personal safety companion</p>
