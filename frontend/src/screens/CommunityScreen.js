@@ -4,8 +4,7 @@ import {
   saveCommunityPost,
   subscribeToCommunityPosts,
   getComments,
-  saveComment,
-  getEmergencyContacts
+  saveComment
 } from '../services/supabase';
 import './CommunityScreen.css';
 
