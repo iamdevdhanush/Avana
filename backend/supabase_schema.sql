@@ -7,48 +7,88 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =============================================
--- TABLE: users (extends Supabase auth.users)
+-- TABLE: user_profiles
 -- =============================================
--- Note: We use Supabase Auth for authentication
--- This table stores additional user profile data
+-- Extended user profile data beyond Firebase auth
 
 CREATE TABLE IF NOT EXISTS public.user_profiles (
-    id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-    email TEXT,
-    display_name TEXT,
+    id UUID PRIMARY KEY,
+    name TEXT,
+    age INTEGER,
+    phone TEXT,
+    guardian_phone TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable RLS
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
--- Policy: Users can view their own profile
-CREATE POLICY "Users can view own profile" ON public.user_profiles
-    FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can view all profiles" ON public.user_profiles
+    FOR SELECT USING (true);
 
--- Policy: Users can update their own profile
+CREATE POLICY "Users can insert own profile" ON public.user_profiles
+    FOR INSERT WITH CHECK (auth.uid() = id OR id IS NULL);
+
 CREATE POLICY "Users can update own profile" ON public.user_profiles
     FOR UPDATE USING (auth.uid() = id);
 
--- Trigger: Create profile on user signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.user_profiles (id, email)
-    VALUES (NEW.id, NEW.email);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- =============================================
+-- TABLE: emergency_contacts
+-- =============================================
+-- User's emergency contacts
 
-CREATE OR REPLACE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+CREATE TABLE IF NOT EXISTS public.emergency_contacts (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    relationship TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_emergency_contacts_user_id ON public.emergency_contacts(user_id);
+
+ALTER TABLE public.emergency_contacts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own emergency contacts" ON public.emergency_contacts
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert emergency contacts" ON public.emergency_contacts
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete emergency contacts" ON public.emergency_contacts
+    FOR DELETE USING (auth.uid() = user_id);
+
+-- =============================================
+-- TABLE: sos_alerts
+-- =============================================
+-- SOS emergency alerts
+
+CREATE TABLE IF NOT EXISTS public.sos_alerts (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    lat DECIMAL(10, 8) NOT NULL,
+    lng DECIMAL(11, 8) NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    status TEXT DEFAULT 'TRIGGERED',
+    message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_sos_alerts_user_id ON public.sos_alerts(user_id);
+CREATE INDEX idx_sos_alerts_created_at ON public.sos_alerts(created_at DESC);
+
+ALTER TABLE public.sos_alerts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own sos alerts" ON public.sos_alerts
+    FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert sos alerts" ON public.sos_alerts
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- =============================================
 -- TABLE: safety_events
 -- =============================================
--- Stores user safety events (zone alerts, SOS triggers)
 
 CREATE TABLE IF NOT EXISTS public.safety_events (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -61,30 +101,21 @@ CREATE TABLE IF NOT EXISTS public.safety_events (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Index for faster queries
 CREATE INDEX idx_safety_events_user_id ON public.safety_events(user_id);
 CREATE INDEX idx_safety_events_created_at ON public.safety_events(created_at DESC);
 CREATE INDEX idx_safety_events_location ON public.safety_events(lat, lng);
 
--- Enable RLS
 ALTER TABLE public.safety_events ENABLE ROW LEVEL SECURITY;
 
--- Policy: Authenticated users can insert their own events
-CREATE POLICY "Users can insert own safety events" ON public.safety_events
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
--- Policy: Authenticated users can view all events (for heatmap)
 CREATE POLICY "Users can view all safety events" ON public.safety_events
     FOR SELECT USING (auth.role() = 'authenticated');
 
--- Policy: Users can view their own events
-CREATE POLICY "Users can view own events" ON public.safety_events
-    FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own safety events" ON public.safety_events
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- =============================================
 -- TABLE: evidence
 -- =============================================
--- Stores user-submitted evidence
 
 CREATE TABLE IF NOT EXISTS public.evidence (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -96,13 +127,10 @@ CREATE TABLE IF NOT EXISTS public.evidence (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Index for faster queries
 CREATE INDEX idx_evidence_user_id ON public.evidence(user_id);
 
--- Enable RLS
 ALTER TABLE public.evidence ENABLE ROW LEVEL SECURITY;
 
--- Policy: Users can only see their own evidence
 CREATE POLICY "Users can view own evidence" ON public.evidence
     FOR SELECT USING (auth.uid() = user_id);
 
@@ -112,7 +140,6 @@ CREATE POLICY "Users can insert own evidence" ON public.evidence
 -- =============================================
 -- TABLE: community_reports
 -- =============================================
--- Stores community-reported unsafe areas
 
 CREATE TABLE IF NOT EXISTS public.community_reports (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -126,47 +153,88 @@ CREATE TABLE IF NOT EXISTS public.community_reports (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Indexes
 CREATE INDEX idx_community_reports_location ON public.community_reports(lat, lng);
 CREATE INDEX idx_community_reports_type ON public.community_reports(type);
 CREATE INDEX idx_community_reports_created_at ON public.community_reports(created_at DESC);
 
--- Enable RLS
 ALTER TABLE public.community_reports ENABLE ROW LEVEL SECURITY;
 
--- Policy: Authenticated users can insert reports
 CREATE POLICY "Authenticated users can insert reports" ON public.community_reports
     FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
--- Policy: Anyone can view community reports
 CREATE POLICY "Anyone can view community reports" ON public.community_reports
     FOR SELECT USING (true);
 
 -- =============================================
+-- TABLE: community_posts
+-- =============================================
+-- Real-time community posts/alerts
+
+CREATE TABLE IF NOT EXISTS public.community_posts (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    location JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_community_posts_created_at ON public.community_posts(created_at DESC);
+
+ALTER TABLE public.community_posts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view community posts" ON public.community_posts
+    FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can insert posts" ON public.community_posts
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- =============================================
+-- TABLE: post_comments
+-- =============================================
+-- Comments on community posts
+
+CREATE TABLE IF NOT EXISTS public.post_comments (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    post_id UUID REFERENCES public.community_posts(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_post_comments_post_id ON public.post_comments(post_id);
+
+ALTER TABLE public.post_comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view comments" ON public.post_comments
+    FOR SELECT USING (true);
+
+CREATE POLICY "Authenticated users can insert comments" ON public.post_comments
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- =============================================
 -- REALTIME SUBSCRIPTIONS
 -- =============================================
--- Enable realtime for community reports
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.community_reports;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.safety_events;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.community_posts;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.post_comments;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.sos_alerts;
 
 -- =============================================
 -- STORAGE BUCKET
 -- =============================================
--- Create storage bucket for evidence files
 
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('evidence', 'evidence', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Policy: Users can upload to their folder
 CREATE POLICY "Users can upload own evidence" ON storage.objects
     FOR INSERT WITH CHECK (
         bucket_id = 'evidence' AND 
         (auth.uid()::text = (storage.foldername(name))[1])
     );
 
--- Policy: Users can view evidence in their folder
 CREATE POLICY "Users can view own evidence files" ON storage.objects
     FOR SELECT USING (
         bucket_id = 'evidence' AND 
@@ -174,10 +242,9 @@ CREATE POLICY "Users can view own evidence files" ON storage.objects
     );
 
 -- =============================================
--- SAMPLE DATA (Optional - for testing)
+-- SAMPLE DATA
 -- =============================================
 
--- Insert sample community reports for Bangalore area
 INSERT INTO public.community_reports (lat, lng, type, description, severity) VALUES
 (12.9716, 77.5946, 'unsafe_area', 'Poor lighting at night', 'medium'),
 (12.9352, 77.6245, 'harassment', 'Reported multiple incidents', 'high'),

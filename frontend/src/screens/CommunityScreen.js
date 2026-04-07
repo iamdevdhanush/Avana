@@ -1,301 +1,271 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { getCommunityReports, saveCommunityReport, subscribeToCommunityReports } from '../services/supabase';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  getCommunityPosts,
+  saveCommunityPost,
+  subscribeToCommunityPosts,
+  getComments,
+  saveComment
+} from '../services/supabase';
 import './CommunityScreen.css';
 
-const REPORT_TYPE_LABELS = {
-  suspicious: 'Suspicious Activity',
-  harassment: 'Harassment',
-  unsafe_area: 'Unsafe Area',
-  stalking: 'Stalking',
-  assault: 'Assault',
-  lighting: 'Poor Lighting',
-  isolated: 'Isolated Area',
-  other: 'Other'
-};
-
 function timeAgo(dateString) {
-  const date = new Date(dateString);
-  const now = new Date();
-  const seconds = Math.floor((now - date) / 1000);
-  
-  if (seconds < 60) return 'Just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hour${Math.floor(seconds / 3600) > 1 ? 's' : ''} ago`;
-  return `${Math.floor(seconds / 86400)} day${Math.floor(seconds / 86400) > 1 ? 's' : ''} ago`;
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+  } catch {
+    return '';
+  }
 }
 
 export function CommunityScreen({ user }) {
-  const [alerts, setAlerts] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [showReportModal, setShowReportModal] = useState(false);
+  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [newPostContent, setNewPostContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [newReport, setNewReport] = useState({
-    type: 'suspicious',
-    description: '',
-    location: ''
-  });
+  const [activeComments, setActiveComments] = useState({});
+  const [newComments, setNewComments] = useState({});
+  const [sendingComment, setSendingComment] = useState({});
 
-  const loadReports = useCallback(async () => {
-    const { data } = await getCommunityReports(100);
-    if (data) {
-      setAlerts(data.map(r => ({
-        id: r.id,
-        type: r.type,
-        title: REPORT_TYPE_LABELS[r.type] || 'Report',
-        location: r.description?.split('.')[0] || 'Location reported',
-        time: timeAgo(r.created_at),
-        description: r.description || '',
-        severity: r.severity || 'medium',
-        lat: r.lat,
-        lng: r.lng
-      })));
+  const commentSubsRef = useRef({});
+  const postsSubRef = useRef(null);
+
+  // Initial fetch
+  const loadPosts = useCallback(async () => {
+    try {
+      setError(null);
+      console.log('[Community] Fetching posts...');
+      const { data, error: fetchErr } = await getCommunityPosts(50);
+      
+      if (fetchErr) {
+        console.error('[Community] Fetch error:', fetchErr);
+        throw fetchErr;
+      }
+      
+      console.log('[Community] Posts fetched:', data?.length || 0);
+      setPosts(data || []);
+    } catch (err) {
+      console.error('[Community] Error loading posts:', err);
+      setError('Could not load posts. Please check your connection.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
+  // Setup initial fetch and real-time subscription
   useEffect(() => {
-    loadReports();
-    
-    const channel = subscribeToCommunityReports((newReport) => {
-      setAlerts(prev => [{
-        id: newReport.id,
-        type: newReport.type,
-        title: REPORT_TYPE_LABELS[newReport.type] || 'Report',
-        location: newReport.description?.split('.')[0] || 'Location reported',
-        time: 'Just now',
-        description: newReport.description || '',
-        severity: newReport.severity || 'medium',
-        lat: newReport.lat,
-        lng: newReport.lng
-      }, ...prev]);
+    loadPosts();
+
+    // Real-time subscription
+    console.log('[Community] Setting up realtime subscription...');
+    postsSubRef.current = subscribeToCommunityPosts((newPost) => {
+      console.log('[Community] New post received:', newPost);
+      setPosts(prev => {
+        // Prevent duplicates
+        if (prev.some(p => p.id === newPost.id)) {
+          return prev;
+        }
+        return [newPost, ...prev];
+      });
     });
 
     return () => {
-      if (channel) channel.unsubscribe();
-    };
-  }, [loadReports]);
-
-  const filteredAlerts = filter === 'all' 
-    ? alerts 
-    : alerts.filter(a => 
-        filter === 'danger' ? a.severity === 'high' :
-        filter === 'warning' ? a.severity === 'medium' :
-        a.severity === 'low'
-      );
-
-  const handleReportSubmit = async () => {
-    if (newReport.description && navigator.geolocation) {
-      setSubmitting(true);
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { error } = await saveCommunityReport({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            type: newReport.type,
-            description: newReport.description,
-            severity: 'medium'
-          });
-          setSubmitting(false);
-          if (!error) {
-            setShowReportModal(false);
-            setNewReport({ type: 'suspicious', description: '', location: '' });
-          }
-        },
-        async () => {
-          const { error } = await saveCommunityReport({
-            lat: 12.9716,
-            lng: 77.5946,
-            type: newReport.type,
-            description: newReport.description,
-            severity: 'medium'
-          });
-          setSubmitting(false);
-          if (!error) {
-            setShowReportModal(false);
-            setNewReport({ type: 'suspicious', description: '', location: '' });
-          }
+      if (postsSubRef.current) {
+        try {
+          postsSubRef.current.unsubscribe();
+          console.log('[Community] Unsubscribed from posts');
+        } catch (err) {
+          console.warn('[Community] Unsubscribe error:', err);
         }
+      }
+      // Clean up comment subscriptions
+      Object.values(commentSubsRef.current).forEach(sub => {
+        try { sub.unsubscribe(); } catch {}
+      });
+      commentSubsRef.current = {};
+    };
+  }, [loadPosts]);
+
+  const handlePostSubmit = async () => {
+    if (!newPostContent.trim() || submitting) return;
+    setSubmitting(true);
+
+    const submit = async (location) => {
+      try {
+        console.log('[Community] Submitting post...');
+        const { error: postErr } = await saveCommunityPost({
+          userId: user?.id,
+          content: newPostContent.trim(),
+          location
+        });
+        
+        if (postErr) {
+          console.error('[Community] Post error:', postErr);
+          throw postErr;
+        }
+        
+        console.log('[Community] Post submitted successfully');
+        setNewPostContent('');
+      } catch (err) {
+        console.error('[Community] Error posting:', err);
+        setError('Could not submit post. Try again.');
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => submit({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => submit(null),
+        { timeout: 5000 }
       );
+    } else {
+      submit(null);
     }
   };
 
-  const getSeverityIcon = (severity) => {
-    switch (severity) {
-      case 'high': return '🔴';
-      case 'medium': return '🟡';
-      default: return '🟢';
+  const toggleComments = async (postId) => {
+    if (activeComments[postId] !== undefined) {
+      // Collapse
+      setActiveComments(prev => {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      });
+      if (commentSubsRef.current[postId]) {
+        try { commentSubsRef.current[postId].unsubscribe(); } catch {}
+        delete commentSubsRef.current[postId];
+      }
+    } else {
+      // Load comments
+      try {
+        const { data } = await getComments(postId);
+        setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
+      } catch (err) {
+        console.error('[Community] Error loading comments:', err);
+      }
     }
   };
 
-  const getSeverityClass = (severity) => {
-    switch (severity) {
-      case 'high': return 'danger';
-      case 'medium': return 'warning';
-      default: return 'safe';
+  const handleCommentSubmit = async (postId) => {
+    const content = newComments[postId]?.trim();
+    if (!content || sendingComment[postId]) return;
+    setSendingComment(prev => ({ ...prev, [postId]: true }));
+    try {
+      await saveComment({ postId, userId: user?.id, content });
+      setNewComments(prev => ({ ...prev, [postId]: '' }));
+      // Refresh comments
+      const { data } = await getComments(postId);
+      setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
+    } catch (err) {
+      console.error('[Community] Comment error:', err);
+    } finally {
+      setSendingComment(prev => ({ ...prev, [postId]: false }));
     }
   };
 
   return (
     <div className="community-screen">
       <header className="page-header">
-        <div className="header-content">
-          <div>
-            <h1 className="page-title">Community</h1>
-            <p className="page-subtitle">Stay informed, stay safe</p>
-          </div>
-          <button 
-            className="report-btn"
-            onClick={() => setShowReportModal(true)}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Report
-          </button>
-        </div>
+        <h1 className="page-title">Community Feed</h1>
+        <p className="page-subtitle">Real-time alerts and discussions</p>
       </header>
 
-      <div className="filter-tabs">
-        <button 
-          className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          All
-        </button>
-        <button 
-          className={`filter-tab ${filter === 'danger' ? 'active' : ''}`}
-          onClick={() => setFilter('danger')}
-        >
-          Alerts
-        </button>
-        <button 
-          className={`filter-tab ${filter === 'warning' ? 'active' : ''}`}
-          onClick={() => setFilter('warning')}
-        >
-          Warnings
-        </button>
-        <button 
-          className={`filter-tab ${filter === 'info' ? 'active' : ''}`}
-          onClick={() => setFilter('info')}
-        >
-          Info
-        </button>
+      <div className="new-post-box card">
+        <textarea
+          className="post-textarea input-field"
+          placeholder="Share an alert, incident, or update..."
+          value={newPostContent}
+          onChange={e => setNewPostContent(e.target.value)}
+          rows="3"
+        />
+        <div className="post-box-footer">
+          <button
+            className="btn btn-primary"
+            onClick={handlePostSubmit}
+            disabled={submitting || !newPostContent.trim()}
+          >
+            {submitting ? 'Posting...' : 'Post'}
+          </button>
+        </div>
       </div>
 
-      <div className="alerts-list scroll-content">
+      {error && (
+        <div style={{ margin: '0 20px 12px', padding: '12px 16px', background: 'var(--red-dim)', border: '1px solid rgba(255,61,61,0.3)', borderRadius: 'var(--radius-md)', color: 'var(--red)', fontSize: 14 }}>
+          {error}
+        </div>
+      )}
+
+      <div className="posts-list scroll-content">
         {loading ? (
           <div className="empty-state">
             <div className="empty-icon">⏳</div>
-            <h3>Loading Reports</h3>
-            <p>Fetching community alerts...</p>
+            <h3>Loading Feed</h3>
+            <p>Fetching community posts...</p>
           </div>
-        ) : filteredAlerts.length === 0 ? (
+        ) : posts.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">✓</div>
             <h3>All Clear</h3>
-            <p>No alerts in this category</p>
+            <p>No community posts yet. Be the first to share!</p>
           </div>
-        ) : (
-          filteredAlerts.map((alert) => (
-            <div key={alert.id} className={`alert-card card ${getSeverityClass(alert.severity)}`}>
-              <div className="alert-header">
-                <span className="alert-severity">
-                  {getSeverityIcon(alert.severity)}
-                </span>
-                <div className="alert-meta">
-                  <span className="alert-time">{alert.time}</span>
+        ) : posts.map(post => (
+          <div key={post.id} className="post-card card">
+            <div className="post-header">
+              <strong>{post.user_profiles?.name || 'Anonymous'}</strong>
+              <span className="post-time">{timeAgo(post.created_at)}</span>
+            </div>
+            <p className="post-content">{post.content}</p>
+            <div className="post-actions">
+              <button className="comment-toggle-btn" onClick={() => toggleComments(post.id)}>
+                💬 {activeComments[post.id] !== undefined
+                  ? `Hide (${activeComments[post.id].length})`
+                  : 'Comments'}
+              </button>
+            </div>
+
+            {activeComments[post.id] !== undefined && (
+              <div className="comments-section">
+                <div className="comments-list">
+                  {activeComments[post.id].length === 0 ? (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>No comments yet</p>
+                  ) : activeComments[post.id].map(comment => (
+                    <div key={comment.id} className="comment">
+                      <strong>{comment.user_profiles?.name || 'Anonymous'}</strong>
+                      <span> {comment.content}</span>
+                      <div className="comment-time">{timeAgo(comment.created_at)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="new-comment">
+                  <input
+                    className="input-field"
+                    type="text"
+                    placeholder="Add a comment..."
+                    value={newComments[post.id] || ''}
+                    onChange={e => setNewComments(prev => ({ ...prev, [post.id]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && handleCommentSubmit(post.id)}
+                  />
+                  <button
+                    className="btn btn-secondary send-comment-btn"
+                    onClick={() => handleCommentSubmit(post.id)}
+                    disabled={sendingComment[post.id]}
+                  >
+                    {sendingComment[post.id] ? '...' : 'Send'}
+                  </button>
                 </div>
               </div>
-              <h3 className="alert-title">{alert.title}</h3>
-              <p className="alert-description">{alert.description}</p>
-              <div className="alert-location">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                  <circle cx="12" cy="10" r="3"/>
-                </svg>
-                {alert.location}
-              </div>
-            </div>
-          ))
-        )}
-        
+            )}
+          </div>
+        ))}
         <div style={{ height: '100px' }}></div>
       </div>
-
-      {showReportModal && (
-        <div className="modal-overlay" onClick={() => setShowReportModal(false)}>
-          <div className="report-modal card" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Report an Incident</h2>
-              <button className="close-btn" onClick={() => setShowReportModal(false)}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Incident Type</label>
-              <select 
-                className="input-field"
-                value={newReport.type}
-                onChange={(e) => setNewReport({...newReport, type: e.target.value})}
-              >
-                <option value="suspicious">Suspicious Activity</option>
-                <option value="harassment">Harassment</option>
-                <option value="lighting">Poor Lighting</option>
-                <option value="isolated">Isolated Area</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Location</label>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="Enter location"
-                value={newReport.location}
-                onChange={(e) => setNewReport({...newReport, location: e.target.value})}
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Description</label>
-              <textarea 
-                className="input-field textarea"
-                placeholder="Describe what you observed..."
-                rows="4"
-                value={newReport.description}
-                onChange={(e) => setNewReport({...newReport, description: e.target.value})}
-              />
-            </div>
-
-            <div className="modal-actions">
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setShowReportModal(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="btn btn-danger"
-                onClick={handleReportSubmit}
-                disabled={!newReport.description || submitting}
-              >
-                {submitting ? 'Submitting...' : 'Submit Report'}
-              </button>
-            </div>
-
-            <p className="report-disclaimer">
-              Your report helps keep the community safe. All reports are anonymous.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
