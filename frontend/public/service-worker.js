@@ -31,17 +31,30 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('api') || event.request.url.includes('supabase')) {
-    event.respondWith(
-      fetch(event.request)
-        .catch(() => caches.match(event.request))
-    );
-  } else {
+  try {
+    // Don't cache API requests (Supabase, Firebase, etc.)
+    if (event.request.url.includes('/rest/v1') || 
+        event.request.url.includes('supabase') ||
+        event.request.url.includes('firebaseio') ||
+        event.request.url.includes('googleapis') ||
+        event.request.url.includes('auth') ||
+        event.request.url.includes('/api/')) {
+      return;
+    }
+    
     event.respondWith(
       caches.match(event.request)
         .then((response) => {
           return response || fetch(event.request);
         })
+        .catch(() => {
+          // Fallback to network if cache fails
+          return fetch(event.request);
+        })
     );
+  } catch (error) {
+    console.error('Service Worker fetch error:', error);
+    // Fallback to network on any SW error
+    return fetch(event.request);
   }
 });
