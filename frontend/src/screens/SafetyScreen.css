@@ -657,3 +657,288 @@
   font-size: 11px;
   color: #6A6A7A;
 }
+
+.emergency-actions {
+  background: linear-gradient(135deg, rgba(255,61,0,0.15) 0%, rgba(255,61,0,0.05) 100%);
+  border: 1px solid rgba(255,61,0,0.3);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.emergency-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.call-btn {
+  padding: 16px;
+  border-radius: 14px;
+  background: #1976D2;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.call-btn:active {
+  transform: scale(0.97);
+}
+
+.whatsapp-btn {
+  padding: 16px;
+  border-radius: 14px;
+  background: #25D366;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.whatsapp-btn:active {
+  transform: scale(0.97);
+}
+
+.contacts-section {
+  padding: 0 16px 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.contact-count {
+  font-size: 12px;
+  color: #00C853;
+  background: rgba(0,200,83,0.15);
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.contacts-list {
+  margin-bottom: 16px;
+}
+
+.contact-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.contact-info {
+  flex: 1;
+}
+
+.contact-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.contact-phone {
+  font-size: 13px;
+  color: #8A8A9A;
+}
+
+.contact-relationship {
+  font-size: 11px;
+  color: #6A6A7A;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.contact-actions button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.no-contacts {
+  text-align: center;
+  color: #8A8A9A;
+  padding: 20px;
+}
+
+.add-contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-contact-form input {
+  padding: 12px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.add-contact-form input::placeholder {
+  color: #6A6A7A;
+}
+
+.add-contact-form input:focus {
+  outline: none;
+  border-color: #00C853;
+}
+
+.add-contact-form button {
+  padding: 14px;
+  background: #00C853;
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.loading-text {
+  text-align: center;
+  color: #8A8A9A;
+  padding: 20px;
+}
+
+.nearby-section {
+  padding: 0 16px 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.places-category {
+  margin-bottom: 20px;
+}
+
+.places-category h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.place-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+.place-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.place-icon {
+  font-size: 20px;
+}
+
+.place-name {
+  font-size: 14px;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.place-distance {
+  font-size: 12px;
+  color: #8A8A9A;
+}
+
+.directions-btn {
+  padding: 8px 14px;
+  background: rgba(0,122,255,0.15);
+  color: #007AFF;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.no-places {
+  text-align: center;
+  color: #6A6A7A;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.call-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  animation: fadeIn 0.3s ease;
+}
+
+.call-content {
+  text-align: center;
+  padding: 40px;
+}
+
+.call-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+}
+
+.call-status {
+  font-size: 18px;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.call-duration {
+  font-size: 14px;
+  color: #8A8A9A;
+  margin-bottom: 20px;
+}
+
+.call-pulse {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #1976D2;
+  margin: 0 auto 20px;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+  100% { transform: scale(0.95); opacity: 1; }
+}
+
+.end-call-btn {
+  padding: 16px 40px;
+  background: #FF3D00;
+  color: #fff;
+  border: none;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}

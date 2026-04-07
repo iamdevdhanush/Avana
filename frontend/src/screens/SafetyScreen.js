@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getEmergencyContacts, saveEmergencyContact, deleteEmergencyContact } from '../services/supabase';
+import { getLocationLink, getGoogleMapsDirectionsUrl, searchNearbyPlaces, createWhatsAppMessage } from '../services/locationService';
 import './SafetyScreen.css';
 
 const SITUATIONS = [
@@ -16,13 +18,12 @@ const LEGAL_STEPS = [
   { title: 'Protection Order', desc: 'You can seek restraining order from court' }
 ];
 
-// BUG FIX: Use environment variable for API key, NOT a hardcoded secret
 const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY || '';
 const GEMINI_URL = GEMINI_API_KEY
   ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
   : null;
 
-export function SafetyScreen({ onSOS }) {
+export function SafetyScreen({ onSOS, user }) {
   const [selectedSituation, setSelectedSituation] = useState(null);
   const [expandedSection, setExpandedSection] = useState(null);
   const [evidence, setEvidence] = useState({ notes: '', file: null });
@@ -32,6 +33,15 @@ export function SafetyScreen({ onSOS }) {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
+
+  const [emergencyContacts, setEmergencyContacts] = useState([]);
+  const [newContact, setNewContact] = useState({ name: '', phone: '', relationship: '' });
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [callStatus, setCallStatus] = useState('idle');
+  const [callContact, setCallContact] = useState(null);
+  const [nearbyPlaces, setNearbyPlaces] = useState({ police: [], hospital: [], women: [] });
+  const [loadingPlaces, setLoadingPlaces] = useState(false);
 
   const situation = SITUATIONS.find(s => s.id === selectedSituation);
 
@@ -44,11 +54,137 @@ export function SafetyScreen({ onSOS }) {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (user?.id) {
+      loadEmergencyContacts();
+      getCurrentLocation();
+    }
+  }, [user?.id]);
+
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          loadNearbyPlaces(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => console.warn('Location error:', err)
+      );
+    }
+  };
+
+  const loadEmergencyContacts = async () => {
+    if (!user?.id) return;
+    setLoadingContacts(true);
+    try {
+      const { data } = await getEmergencyContacts(user.id);
+      setEmergencyContacts(data || []);
+    } catch (err) {
+      console.error('Load contacts error:', err);
+    } finally {
+      setLoadingContacts(false);
+    }
+  };
+
+  const loadNearbyPlaces = async (lat, lng) => {
+    setLoadingPlaces(true);
+    try {
+      const [police, hospital, women] = await Promise.all([
+        searchNearbyPlaces(lat, lng, 'police'),
+        searchNearbyPlaces(lat, lng, 'hospital'),
+        searchNearbyPlaces(lat, lng, 'women')
+      ]);
+      setNearbyPlaces({ police: police.slice(0, 5), hospital: hospital.slice(0, 5), women: women.slice(0, 5) });
+    } catch (err) {
+      console.error('Load places error:', err);
+    } finally {
+      setLoadingPlaces(false);
+    }
+  };
+
+  const handleAddContact = async () => {
+    if (!newContact.name || !newContact.phone) return;
+    try {
+      await saveEmergencyContact({
+        userId: user.id,
+        name: newContact.name,
+        phone: newContact.phone,
+        relationship: newContact.relationship || 'Emergency Contact'
+      });
+      setNewContact({ name: '', phone: '', relationship: '' });
+      loadEmergencyContacts();
+    } catch (err) {
+      console.error('Add contact error:', err);
+    }
+  };
+
+  const handleDeleteContact = async (contactId) => {
+    try {
+      await deleteEmergencyContact(contactId);
+      loadEmergencyContacts();
+    } catch (err) {
+      console.error('Delete contact error:', err);
+    }
+  };
+
+  const handleCallEmergency = (phone) => {
+    window.location.href = `tel:${phone}`;
+  };
+
+  const handleSimulateCall = (contact) => {
+    setCallContact(contact);
+    setCallStatus('calling');
+    setShowCallModal(true);
+
+    setTimeout(() => {
+      setCallStatus('connected');
+    }, 2000);
+
+    setTimeout(() => {
+      setCallStatus('ended');
+      setTimeout(() => {
+        setShowCallModal(false);
+        setCallStatus('idle');
+        setCallContact(null);
+      }, 1000);
+    }, 8000);
+  };
+
+  const handleSOSClick = () => {
+    if (onSOS) onSOS();
+  };
+
+  const handleWhatsAppSOS = async () => {
+    if (!navigator.geolocation) {
+      alert('Location not available');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const userName = user?.name || 'Avana User';
+
+        if (emergencyContacts.length > 0) {
+          const firstContact = emergencyContacts[0];
+          const phone = firstContact.phone.replace(/\D/g, '');
+          const message = createWhatsAppMessage(userName, lat, lng);
+          window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+        } else {
+          const message = createWhatsAppMessage(userName, lat, lng);
+          alert(`No emergency contacts. Message:\n\n${decodeURIComponent(message)}`);
+        }
+      },
+      (err) => alert('Could not get location')
+    );
+  };
+
   const handleShareLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const link = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
+          const link = getLocationLink(pos.coords.latitude, pos.coords.longitude);
           if (navigator.share) {
             navigator.share({ text: `My location: ${link}` });
           } else {
@@ -86,7 +222,6 @@ export function SafetyScreen({ onSOS }) {
 
   const sendToGemini = async (message) => {
     setChatLoading(true);
-    // BUG FIX: Guard against missing API key
     if (!GEMINI_URL) {
       setChatLoading(false);
       return 'AI assistant is not configured. For immediate safety, call emergency services (112) or a trusted person.';
@@ -129,6 +264,28 @@ export function SafetyScreen({ onSOS }) {
 
   const toggleSection = (id) => setExpandedSection(expandedSection === id ? null : id);
 
+  const renderPlaceCard = (place, type) => (
+    <div key={`${place.lat}-${place.lng}`} className="place-card">
+      <div className="place-info">
+        <span className="place-icon">
+          {type === 'police' ? '🚔' : type === 'hospital' ? '🏥' : '👩'}
+        </span>
+        <div>
+          <p className="place-name">{place.name}</p>
+          <p className="place-distance">{place.distance.toFixed(1)} km away</p>
+        </div>
+      </div>
+      <a 
+        href={getGoogleMapsDirectionsUrl(place.lat, place.lng)} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="directions-btn"
+      >
+        Directions
+      </a>
+    </div>
+  );
+
   return (
     <div className="safety-screen">
       <header className="safety-header">
@@ -151,20 +308,129 @@ export function SafetyScreen({ onSOS }) {
           </div>
         )}
 
+        <div className="emergency-actions">
+          <div className="action-title">
+            <span>🚨</span> Emergency Actions
+          </div>
+          <div className="emergency-buttons">
+            <button className="sos-btn" onClick={handleSOSClick}>
+              <span className="sos-glow"></span>
+              🚨 SOS Alert
+            </button>
+            <button className="call-btn" onClick={() => handleCallEmergency('112')}>
+              📞 Call 112
+            </button>
+            <button className="whatsapp-btn" onClick={handleWhatsAppSOS}>
+              💬 WhatsApp SOS
+            </button>
+          </div>
+        </div>
+
+        <div className="section">
+          <div className="section-header" onClick={() => toggleSection('contacts')}>
+            <span>👥</span> Emergency Contacts
+            <span className="contact-count">{emergencyContacts.length}</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points={expandedSection === 'contacts' ? "18,15 12,9 6,15" : "6,9 12,15 18,9"} />
+            </svg>
+          </div>
+          {expandedSection === 'contacts' && (
+            <div className="contacts-section">
+              {loadingContacts ? (
+                <div className="loading-text">Loading contacts...</div>
+              ) : emergencyContacts.length > 0 ? (
+                <div className="contacts-list">
+                  {emergencyContacts.map(contact => (
+                    <div key={contact.id} className="contact-item">
+                      <div className="contact-info">
+                        <p className="contact-name">{contact.name}</p>
+                        <p className="contact-phone">{contact.phone}</p>
+                        <p className="contact-relationship">{contact.relationship}</p>
+                      </div>
+                      <div className="contact-actions">
+                        <button onClick={() => handleCallEmergency(contact.phone)}>📞</button>
+                        <button onClick={() => handleSimulateCall(contact)}>📱</button>
+                        <button onClick={() => handleDeleteContact(contact.id)}>🗑️</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="no-contacts">No emergency contacts added</div>
+              )}
+              <div className="add-contact-form">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={newContact.name}
+                  onChange={e => setNewContact({ ...newContact, name: e.target.value })}
+                />
+                <input
+                  type="tel"
+                  placeholder="Phone"
+                  value={newContact.phone}
+                  onChange={e => setNewContact({ ...newContact, phone: e.target.value })}
+                />
+                <input
+                  type="text"
+                  placeholder="Relationship"
+                  value={newContact.relationship}
+                  onChange={e => setNewContact({ ...newContact, relationship: e.target.value })}
+                />
+                <button onClick={handleAddContact}>+ Add Contact</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="section">
+          <div className="section-header" onClick={() => toggleSection('nearby')}>
+            <span>📍</span> Nearby Help Centers
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points={expandedSection === 'nearby' ? "18,15 12,9 6,15" : "6,9 12,15 18,9"} />
+            </svg>
+          </div>
+          {expandedSection === 'nearby' && (
+            <div className="nearby-section">
+              {loadingPlaces ? (
+                <div className="loading-text">Finding nearby places...</div>
+              ) : (
+                <>
+                  <div className="places-category">
+                    <h4>🚔 Police Stations</h4>
+                    {nearbyPlaces.police.length > 0 ? (
+                      nearbyPlaces.police.map(place => renderPlaceCard(place, 'police'))
+                    ) : (
+                      <p className="no-places">No police stations found nearby</p>
+                    )}
+                  </div>
+                  <div className="places-category">
+                    <h4>🏥 Hospitals</h4>
+                    {nearbyPlaces.hospital.length > 0 ? (
+                      nearbyPlaces.hospital.map(place => renderPlaceCard(place, 'hospital'))
+                    ) : (
+                      <p className="no-places">No hospitals found nearby</p>
+                    )}
+                  </div>
+                  <div className="places-category">
+                    <h4>👩 Women Help Centers</h4>
+                    {nearbyPlaces.women.length > 0 ? (
+                      nearbyPlaces.women.map(place => renderPlaceCard(place, 'women'))
+                    ) : (
+                      <p className="no-places">No women help centers found nearby</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="immediate-action">
           <div className="action-title">
             <span>⚠️</span> Immediate Action
           </div>
-          <div className="action-steps">
-            <div className="step">1. Move to safe/public area</div>
-            <div className="step">2. Call for help</div>
-            <div className="step">3. Trigger SOS</div>
-          </div>
           <div className="action-buttons">
-            <button className="sos-btn" onClick={onSOS}>
-              <span className="sos-glow"></span>
-              🚨 SOS
-            </button>
             <button className="share-btn" onClick={handleShareLocation}>
               📍 Share Location
             </button>
@@ -314,6 +580,26 @@ export function SafetyScreen({ onSOS }) {
               onKeyDown={e => e.key === 'Enter' && handleChatSend()}
             />
             <button onClick={handleChatSend} disabled={chatLoading}>Send</button>
+          </div>
+        </div>
+      )}
+
+      {showCallModal && (
+        <div className="call-modal">
+          <div className="call-content">
+            <div className="call-icon">
+              {callStatus === 'calling' ? '📞' : callStatus === 'connected' ? '💬' : '✅'}
+            </div>
+            <p className="call-status">
+              {callStatus === 'calling' && `Calling ${callContact?.name}...`}
+              {callStatus === 'connected' && `Connected with ${callContact?.name}`}
+              {callStatus === 'ended' && 'Call ended'}
+            </p>
+            {callStatus === 'calling' && <div className="call-pulse"></div>}
+            {callStatus === 'connected' && <p className="call-duration">00:08</p>}
+            <button className="end-call-btn" onClick={() => setShowCallModal(false)}>
+              {callStatus === 'connected' ? 'End Call' : 'Cancel'}
+            </button>
           </div>
         </div>
       )}

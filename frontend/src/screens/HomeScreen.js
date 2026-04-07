@@ -1,22 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents } from '../services/supabase';
+import { getPreciseLocation } from '../services/locationService';
 import './HomeScreen.css';
-
-// BUG FIX: Reverse geocode to get real city name instead of hardcoded 'Bangalore'
-async function reverseGeocode(lat, lng) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-      { headers: { 'Accept-Language': 'en', 'User-Agent': 'Avana-SafetyApp/1.0' } }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.address?.city || data.address?.town || data.address?.suburb || data.address?.state || null;
-  } catch {
-    return null;
-  }
-}
 
 export function HomeScreen({ onSOS, sosTriggered, user }) {
   const [location, setLocation] = useState('Detecting location...');
@@ -47,9 +33,8 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
     };
   }, [user?.id, loadAnalytics]);
 
-  const lastGeocodeRef = useRef(null);
-
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     let watchId;
 
     if (navigator.geolocation) {
@@ -59,13 +44,12 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
             const { latitude: lat, longitude: lng } = pos.coords;
             setLiveStatus(true);
 
-            // BUG FIX: Reverse geocode only when coords change significantly
-            const key = `${lat.toFixed(2)},${lng.toFixed(2)}`;
-            if (key !== lastGeocodeRef.current) {
-              lastGeocodeRef.current = key;
-              const cityName = await reverseGeocode(lat, lng);
-              setLocation(cityName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-            }
+            // Use precise location with sublocality
+            const locationData = await getPreciseLocation(lat, lng);
+            const displayLocation = locationData.sublocality 
+              ? `${locationData.sublocality}, ${locationData.city || ''}`.trim()
+              : locationData.formatted;
+            setLocation(displayLocation || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
 
             const hour = new Date().getHours();
             const isNight = hour >= 21 || hour < 6;
@@ -100,7 +84,7 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, [user, loadAnalytics, setupRealtime]);
+  }, [user]);
 
   const handleSOSPress = async () => {
     if (sosConfirm) {

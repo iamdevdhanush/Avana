@@ -364,6 +364,14 @@ export function MapScreen({ user }) {
     setRiskData({ risk, reason, color, score });
   }, [communityReports]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+
   // ── Route finding ─────────────────────────────────────────────────────────
   const handleFindRoute = useCallback(async () => {
     if (!userLocation) { alert('Your location is not available yet.'); return; }
