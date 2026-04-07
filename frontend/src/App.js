@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { HomeScreen } from './screens/HomeScreen';
-import { MapScreen } from './screens/MapScreen';
-import { SafetyScreen } from './screens/SafetyScreen';
 import { CommunityScreen } from './screens/CommunityScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -10,6 +8,9 @@ import { ConsentScreen } from './screens/ConsentScreen';
 import { NavigationBar } from './components/NavigationBar';
 import { useAuth } from './contexts/AuthContext';
 import './App.css';
+
+const MapScreen = lazy(() => import('./screens/MapScreen').then(m => ({ default: m.MapScreen })));
+const SafetyScreen = lazy(() => import('./screens/SafetyScreen').then(m => ({ default: m.SafetyScreen })));
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -155,6 +156,7 @@ function AppContent() {
           </div>
         )}
         <div className="screen-container">
+          <Suspense fallback={<div className="app-loading"><div className="loading-spinner"></div><p>Loading...</p></div>}>
           <Routes location={location}>
             <Route path="/" element={<HomeScreen onSOS={handleSOS} sosTriggered={sosTriggered} user={user} />} />
             <Route path="/map" element={<MapScreen user={user} />} />
@@ -163,6 +165,7 @@ function AppContent() {
             <Route path="/profile" element={<ProfileScreen onLogout={handleLogout} user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </div>
 
         <NavigationBar />

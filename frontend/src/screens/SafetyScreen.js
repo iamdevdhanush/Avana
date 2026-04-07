@@ -258,6 +258,17 @@ export function SafetyScreen({ onSOS, user }) {
     setChatMessages(prev => [...prev, { role: 'assistant', text: aiResponse }]);
   };
 
+  const handleQuickAction = async (actionText) => {
+    if (chatLoading) return;
+    const userMsg = { role: 'user', text: actionText };
+    const updatedMessages = [...chatMessages, userMsg];
+    setChatMessages(updatedMessages);
+    setChatInput('');
+    const history = updatedMessages.slice(1);
+    const aiResponse = await sendToBackend(actionText, history);
+    setChatMessages(prev => [...prev, { role: 'assistant', text: aiResponse }]);
+  };
+
   const toggleSection = (id) => setExpandedSection(expandedSection === id ? null : id);
 
   const renderPlaceCard = (place, type) => (
@@ -558,9 +569,21 @@ export function SafetyScreen({ onSOS, user }) {
             </div>
             <button className="chat-close" onClick={() => setChatOpen(false)}>×</button>
           </div>
+          <div className="chat-quick-actions" style={{ display: 'flex', gap: '6px', padding: '8px 12px', overflowX: 'auto', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            {['🛡️ I feel unsafe', '🏠 Help me get home', '📍 Nearby safe places'].map(action => (
+              <button
+                key={action}
+                onClick={() => handleQuickAction(action)}
+                disabled={chatLoading}
+                style={{ whiteSpace: 'nowrap', padding: '6px 12px', borderRadius: '16px', border: '1px solid rgba(0,200,83,0.3)', background: 'rgba(0,200,83,0.1)', color: '#00C853', fontSize: '12px', fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+              >
+                {action}
+              </button>
+            ))}
+          </div>
           <div className="chat-messages">
             {chatMessages.map((msg, i) => (
-              <div key={i} className={`chat-msg ${msg.role}`}>
+              <div key={i} className={`chat-msg ${msg.role} chat-fade-in`}>
                 {msg.text}
               </div>
             ))}

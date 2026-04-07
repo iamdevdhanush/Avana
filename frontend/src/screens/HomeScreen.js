@@ -461,6 +461,17 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
           </div>
         </section>
 
+        <section className="safety-insights" style={{ padding: '0 20px' }}>
+          <div className="safety-status-badge" style={{
+            background: riskConfig.bg,
+            border: `1px solid ${riskConfig.color}30`,
+            color: riskConfig.color
+          }}>
+            <span className="status-icon">{riskLevel === 'HIGH' || riskLevel === 'CRITICAL' ? '🔴' : riskLevel === 'MEDIUM' ? '🟡' : '🟢'}</span>
+            <span>Safety Status: {riskConfig.label}</span>
+            {locationName && <span style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.8 }}>📍 {locationName}</span>}
+          </div>
+        </section>
         {analytics && (
           <section className="analytics-section">
             <h2 className="section-title">Your Safety Stats (30 days)</h2>
