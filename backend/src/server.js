@@ -17,8 +17,10 @@ const PORT = process.env.PORT || 5000;
 console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`🔌 PORT: ${PORT}`);
 
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 app.use(cors({
-  origin: '*'
+  origin: FRONTEND_URL
 }));
 app.use(express.json());
 

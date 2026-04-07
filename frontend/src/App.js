@@ -148,7 +148,7 @@ function App() {
 
     // BUG FIX: Also trigger the backend SOS API for server-side logging
     if (location && user?.id) {
-      const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const apiBase = process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL.replace(/\/$/, '') : 'http://localhost:5000';
       fetch(`${apiBase}/sos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

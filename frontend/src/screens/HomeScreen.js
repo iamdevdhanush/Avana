@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents, triggerSOSAlert } from '../services/supabase';
+import { saveSafetyEvent, getSafetyAnalytics, subscribeToSafetyEvents } from '../services/supabase';
 import './HomeScreen.css';
 
 // BUG FIX: Reverse geocode to get real city name instead of hardcoded 'Bangalore'
