@@ -15,9 +15,6 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
     error: null
   });
   const [locationName, setLocationName] = useState('');
-  const [locationError, setLocationError] = useState('');
-  const [sosAlert, setSosAlert] = useState('');
-  const [emergencyMessage, setEmergencyMessage] = useState('');
   const [riskLevel, setRiskLevel] = useState('LOW');
   const [riskReason, setRiskReason] = useState('Low crime area, well-lit streets');
   const [sosConfirm, setSosConfirm] = useState(false);
@@ -249,12 +246,6 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
 
   const handleSOSPress = async () => {
     if (sosConfirm) {
-      // Show alert about sharing location
-      const locLink = getLocationLink(location.lat, location.lng);
-      const msg = `EMERGENCY: I need help. My location: ${locLink}`;
-      setEmergencyMessage(msg);
-      setSosAlert('Sharing your live location...');
-
       // Trigger phone call
       window.location.href = 'tel:+917624828817';
 
@@ -390,7 +381,6 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
             </button>
           </div>
         </div>
-        {sosAlert && <div className="sos-alert" style={{ background: '#fffae6', padding: '8px', marginTop: '8px', borderRadius: '4px', color: '#333' }}>{sosAlert}</div>}
       </header>
 
       <div className="home-content scroll-content">
