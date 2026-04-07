@@ -93,13 +93,15 @@ function AppContent() {
     }
 
     if (location && user?.id) {
-      const apiBase = process.env.REACT_APP_API_URL ? process.env.REACT_APP_API_URL.replace(/\/$/, '') : 'http://localhost:5000';
+      // BUG FIX: REACT_APP_API_URL already ends with /api — don't strip it
+      const apiBase = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
       fetch(`${apiBase}/sos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lat: location.lat, lng: location.lng, userId: user.id })
       }).catch(err => console.error('SOS API error:', err));
     }
+
 
     setTimeout(() => setSosTriggered(false), 5000);
   };

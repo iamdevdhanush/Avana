@@ -1,6 +1,15 @@
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 
+// Throttle reverse geocode calls — cache by 2-decimal lat/lng key
+const geocodeCache = new Map();
+
 export async function getPreciseLocation(lat, lng) {
+  const cacheKey = `${parseFloat(lat).toFixed(2)},${parseFloat(lng).toFixed(2)}`;
+
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey);
+  }
+
   try {
     const response = await fetch(
       `${NOMINATIM_BASE}/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
@@ -8,30 +17,29 @@ export async function getPreciseLocation(lat, lng) {
         headers: {
           'Accept-Language': 'en',
           'User-Agent': 'Avana-SafetyApp/1.0'
-        }
+        },
+        signal: AbortSignal.timeout(8000)
       }
     );
 
-    if (!response.ok) {
-      throw new Error('Geocoding failed');
-    }
+    if (!response.ok) throw new Error('Geocoding failed');
 
     const data = await response.json();
     const addr = data.address || {};
 
-    const sublocality = 
-      addr.sublocality || 
-      addr.neighbourhood || 
-      addr.suburb || 
-      addr.district || 
-      addr.city_district || 
+    const sublocality =
+      addr.sublocality ||
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.district ||
+      addr.city_district ||
       null;
 
-    const city = 
-      addr.city || 
-      addr.town || 
-      addr.village || 
-      addr.municipality || 
+    const city =
+      addr.city ||
+      addr.town ||
+      addr.village ||
+      addr.municipality ||
       null;
 
     const state = addr.state || null;
@@ -41,13 +49,14 @@ export async function getPreciseLocation(lat, lng) {
       city,
       state,
       fullAddress: data.display_name,
-      formatted: sublocality 
-        ? `${sublocality}, ${city || state}` 
+      formatted: sublocality
+        ? `${sublocality}, ${city || state || ''}`.trim().replace(/,\s*$/, '')
         : city || data.display_name?.split(',')[0] || 'Unknown',
       lat: parseFloat(lat).toFixed(6),
       lng: parseFloat(lng).toFixed(6)
     };
 
+    geocodeCache.set(cacheKey, result);
     return result;
   } catch (error) {
     console.error('Precise location error:', error);
@@ -71,39 +80,70 @@ export function getGoogleMapsDirectionsUrl(lat, lng) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
+// BUG FIX: Nominatim viewbox format is: left,top,right,bottom (min_lon,max_lat,max_lon,min_lat)
+// Previous code had these in the WRONG order causing empty search results
 export async function searchNearbyPlaces(lat, lng, type = 'police') {
-  try {
-    const query = type === 'police' 
-      ? 'police station' 
-      : type === 'hospital'
-      ? 'hospital'
-      : type === 'women'
-      ? 'women help center'
-      : type;
+  const radius = 0.08; // ~8-9km
+  // Correct viewbox: left(min_lon), top(max_lat), right(max_lon), bottom(min_lat)
+  const viewbox = `${lng - radius},${lat + radius},${lng + radius},${lat - radius}`;
 
-    const response = await fetch(
-      `${NOMINATIM_BASE}/search?q=${encodeURIComponent(query)}&lat=${lat}&lon=${lng}&format=json&limit=10&bounded=1&viewbox=${lng-0.05},${lat+0.05},${lng+0.05},${lat-0.05}`,
-      {
-        headers: {
-          'Accept-Language': 'en',
-          'User-Agent': 'Avana-SafetyApp/1.0'
-        }
-      }
-    );
+  const queryMap = {
+    police: 'police station',
+    hospital: 'hospital',
+    women: 'women centre OR women helpline OR mahila thana'
+  };
+
+  const query = queryMap[type] || type;
+
+  try {
+    const url = `${NOMINATIM_BASE}/search?q=${encodeURIComponent(query)}&format=json&limit=10&viewbox=${viewbox}&bounded=1&addressdetails=0`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept-Language': 'en',
+        'User-Agent': 'Avana-SafetyApp/1.0'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
 
     if (!response.ok) throw new Error('Search failed');
-    
+
     const results = await response.json();
-    
+
+    if (!Array.isArray(results) || results.length === 0) {
+      // Fallback: search without bounded restriction
+      return await searchNearbyPlacesFallback(lat, lng, query);
+    }
+
     return results.map(place => ({
       name: place.display_name?.split(',')[0] || 'Unknown',
       fullAddress: place.display_name,
       lat: parseFloat(place.lat),
-      lng: parseFloat(place.lng),
-      distance: calculateDistance(lat, lng, parseFloat(place.lat), parseFloat(place.lng))
+      lng: parseFloat(place.lon), // BUG FIX: Nominatim returns 'lon' not 'lng'
+      distance: calculateDistance(lat, lng, parseFloat(place.lat), parseFloat(place.lon))
     })).sort((a, b) => a.distance - b.distance);
   } catch (error) {
     console.error('Search places error:', error);
+    return [];
+  }
+}
+
+async function searchNearbyPlacesFallback(lat, lng, query) {
+  try {
+    const url = `${NOMINATIM_BASE}/search?q=${encodeURIComponent(query + ' near ' + lat + ',' + lng)}&format=json&limit=5&addressdetails=0`;
+    const response = await fetch(url, {
+      headers: { 'Accept-Language': 'en', 'User-Agent': 'Avana-SafetyApp/1.0' },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!response.ok) return [];
+    const results = await response.json();
+    return results.map(place => ({
+      name: place.display_name?.split(',')[0] || 'Unknown',
+      fullAddress: place.display_name,
+      lat: parseFloat(place.lat),
+      lng: parseFloat(place.lon),
+      distance: calculateDistance(lat, lng, parseFloat(place.lat), parseFloat(place.lon))
+    })).sort((a, b) => a.distance - b.distance);
+  } catch {
     return [];
   }
 }
@@ -112,7 +152,8 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));

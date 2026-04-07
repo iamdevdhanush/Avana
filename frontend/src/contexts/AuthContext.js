@@ -10,47 +10,44 @@ import {
 } from 'firebase/auth';
 import { auth } from '../firebase';
 import { createOrGetUserProfile } from '../services/userProfileService';
+import { saveUserProfile } from '../services/supabase';
 
 const AuthContext = createContext(null);
-
-const STORAGE_KEYS = {
-  CONSENT: 'avana_consent',
-  LOCATION_PERMISSION: 'avana_location_permission'
-};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const getConsentKey = useCallback(() => {
-    return user ? `${STORAGE_KEYS.CONSENT}_${user.id}` : null;
-  }, [user]);
-
-  const hasConsent = useCallback(() => {
-    const key = getConsentKey();
-    return key ? localStorage.getItem(key) === 'true' : false;
-  }, [getConsentKey]);
-
   const [consentGiven, setConsentGiven] = useState(false);
 
+  // BUG FIX: Stable consent key helper — does not depend on user state ref
+  const getConsentKey = (uid) => uid ? `avana_consent_${uid}` : null;
+
   const setConsent = useCallback((value) => {
-    const key = getConsentKey();
+    // Access current user uid from auth directly to avoid stale closure
+    const uid = auth.currentUser?.uid;
+    const key = getConsentKey(uid);
     if (key) {
       localStorage.setItem(key, value ? 'true' : 'false');
-      setConsentGiven(value);
     }
-  }, [getConsentKey]);
+    setConsentGiven(value);
+  }, []);
 
   const clearConsent = useCallback(() => {
-    const key = getConsentKey();
-    if (key) {
-      localStorage.removeItem(key);
-    }
+    const uid = auth.currentUser?.uid;
+    const key = getConsentKey(uid);
+    if (key) localStorage.removeItem(key);
     setConsentGiven(false);
-  }, [getConsentKey]);
+  }, []);
 
+  const hasConsent = useCallback(() => {
+    const uid = auth.currentUser?.uid;
+    const key = getConsentKey(uid);
+    return key ? localStorage.getItem(key) === 'true' : false;
+  }, []);
+
+  // ── Auth state listener ──────────────────────────────────────────────────────
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
@@ -59,7 +56,7 @@ export function AuthProvider({ children }) {
       if (firebaseUser) {
         try {
           const userProfile = await createOrGetUserProfile(firebaseUser);
-          
+
           const userData = {
             id: firebaseUser.uid,
             email: firebaseUser.email,
@@ -73,8 +70,9 @@ export function AuthProvider({ children }) {
           setUser(userData);
           setProfile(userProfile);
 
-          const consentKey = `avana_consent_${firebaseUser.uid}`;
-          setConsentGiven(localStorage.getItem(consentKey) === 'true');
+          // Restore consent from storage
+          const consentKey = getConsentKey(firebaseUser.uid);
+          setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
         } catch (err) {
           console.error('Error loading user profile:', err);
           setUser({
@@ -96,14 +94,16 @@ export function AuthProvider({ children }) {
     });
 
     return () => unsubscribe();
-  }, [setConsentGiven]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ── Login with email ─────────────────────────────────────────────────────────
   const loginWithEmail = useCallback(async (email, password) => {
     setError(null);
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const userProfile = await createOrGetUserProfile(result.user);
-      
+
       const userData = {
         id: result.user.uid,
         email: result.user.email,
@@ -117,24 +117,24 @@ export function AuthProvider({ children }) {
       setUser(userData);
       setProfile(userProfile);
 
-      const consentKey = `avana_consent_${result.user.uid}`;
-      const hasExistingConsent = localStorage.getItem(consentKey) === 'true';
-      setConsentGiven(hasExistingConsent);
+      const consentKey = getConsentKey(result.user.uid);
+      setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
 
       return userData;
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [setConsentGiven]);
+  }, []);
 
+  // ── Login with Google ────────────────────────────────────────────────────────
   const loginWithGoogle = useCallback(async () => {
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const userProfile = await createOrGetUserProfile(result.user);
-      
+
       const userData = {
         id: result.user.uid,
         email: result.user.email,
@@ -148,48 +148,59 @@ export function AuthProvider({ children }) {
       setUser(userData);
       setProfile(userProfile);
 
-      const consentKey = `avana_consent_${result.user.uid}`;
-      const hasExistingConsent = localStorage.getItem(consentKey) === 'true';
-      setConsentGiven(hasExistingConsent);
+      const consentKey = getConsentKey(result.user.uid);
+      setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
 
       return userData;
     } catch (err) {
       setError(err.message);
       throw err;
     }
-  }, [setConsentGiven]);
+  }, []);
 
+  // ── Signup with email ────────────────────────────────────────────────────────
+  // BUG FIX: Now passes additionalData to createOrGetUserProfile so age/guardian_phone is saved
   const signupWithEmail = useCallback(async (email, password, additionalData = {}) => {
     setError(null);
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
-      
-      if (additionalData.name) {
-        await updateProfile(result.user, { displayName: additionalData.name });
-      }
 
-      const profileData = {
-        id: result.user.uid,
-        name: additionalData.name || email.split('@')[0],
-        age: additionalData.age || 18,
+      // Update Firebase display name immediately
+      const displayName = additionalData.name || email.split('@')[0];
+      await updateProfile(result.user, { displayName });
+
+      // BUG FIX: Pass extraData so the profile is created with correct age/guardian data
+      const userProfile = await createOrGetUserProfile(result.user, {
+        name: displayName,
+        age: additionalData.age ?? 18,
         phone: additionalData.phone || '',
-        guardian_phone: additionalData.guardian_phone || null
-      };
+        guardian_phone: additionalData.guardian_phone || null,
+      });
 
-      await createOrGetUserProfile(result.user);
+      // If createOrGetUserProfile returned an existing profile (e.g., race condition),
+      // force save the signup data through saveUserProfile directly
+      if (!userProfile?.age || userProfile.age === 18) {
+        await saveUserProfile({
+          id: result.user.uid,
+          name: displayName,
+          age: additionalData.age ?? 18,
+          phone: additionalData.phone || '',
+          guardian_phone: additionalData.guardian_phone || null,
+        });
+      }
 
       const userData = {
         id: result.user.uid,
         email: result.user.email,
-        name: profileData.name,
-        age: profileData.age,
-        phone: profileData.phone,
-        guardian_phone: profileData.guardian_phone,
+        name: displayName,
+        age: additionalData.age,
+        phone: additionalData.phone || '',
+        guardian_phone: additionalData.guardian_phone || null,
         photoURL: result.user.photoURL
       };
 
       setUser(userData);
-      setProfile(profileData);
+      setProfile(userData);
       setConsentGiven(false);
 
       return userData;
@@ -199,9 +210,12 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // ── Logout ───────────────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
     setError(null);
     try {
+      // Clear consent before signing out so key is available
+      clearConsent();
       await firebaseSignOut(auth);
       setUser(null);
       setProfile(null);
@@ -210,7 +224,7 @@ export function AuthProvider({ children }) {
       setError(err.message);
       throw err;
     }
-  }, []);
+  }, [clearConsent]);
 
   const value = {
     user,
