@@ -18,10 +18,8 @@ const LEGAL_STEPS = [
   { title: 'Protection Order', desc: 'You can seek restraining order from court' }
 ];
 
-const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY || '';
-const GEMINI_URL = GEMINI_API_KEY
-  ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
-  : null;
+// Chat endpoint — proxied through backend to keep API key secure
+const CHAT_API_URL = `${(process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/$/, '')}/api/chat`;
 
 export function SafetyScreen({ onSOS, user }) {
   const [selectedSituation, setSelectedSituation] = useState(null);
@@ -222,30 +220,24 @@ export function SafetyScreen({ onSOS, user }) {
     alert('Evidence saved securely!');
   };
 
-  const sendToGemini = async (message) => {
+  const sendToBackend = async (message, history) => {
     setChatLoading(true);
-    if (!GEMINI_URL) {
-      setChatLoading(false);
-      return 'AI assistant is not configured. For immediate safety, call emergency services (112) or a trusted person.';
-    }
-
     try {
-      const response = await fetch(GEMINI_URL, {
+      const response = await fetch(CHAT_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: message }] }],
-          generationConfig: { maxOutputTokens: 200, temperature: 0.7 }
-        })
+        body: JSON.stringify({ message, history }),
+        signal: AbortSignal.timeout(20000)
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
       const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'I understand this is difficult. Please stay calm and focus on your immediate safety. Consider calling a trusted friend or emergency services.';
+      return data.reply || 'I understand this is difficult. Please stay calm. Consider calling 112 or a trusted person.';
     } catch (err) {
-      console.error('Gemini AI error:', err);
-      return 'I am here to help. For immediate safety, please call emergency services (112) or a trusted person. You are not alone.';
+      console.error('Chat API error:', err);
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        return 'Response took too long. Please try again, or call 112 for immediate help.';
+      }
+      return 'Sorry, I couldn\'t respond. For immediate safety, call emergency services (112) or a trusted person.';
     } finally {
       setChatLoading(false);
     }
@@ -254,12 +246,14 @@ export function SafetyScreen({ onSOS, user }) {
   const handleChatSend = async () => {
     if (!chatInput.trim() || chatLoading) return;
 
-    const userMsg = { role: 'user', text: chatInput };
-    setChatMessages(prev => [...prev, userMsg]);
+    const userMsg = { role: 'user', text: chatInput.trim() };
+    const updatedMessages = [...chatMessages, userMsg];
+    setChatMessages(updatedMessages);
     setChatInput('');
 
-    const systemPrompt = 'You are an AI safety assistant for Avana. Help women in unsafe situations with SHORT (4-5 lines max), CLEAR, CALM, ACTIONABLE advice. Focus on immediate safety, escape routes, and legal steps. Never ask for personal info. Keep responses brief and helpful.';
-    const aiResponse = await sendToGemini(`${systemPrompt}\n\nUser: ${chatInput}`);
+    // Send conversation history (exclude the initial greeting) for context
+    const history = updatedMessages.slice(1);
+    const aiResponse = await sendToBackend(chatInput.trim(), history);
 
     setChatMessages(prev => [...prev, { role: 'assistant', text: aiResponse }]);
   };

@@ -14,6 +14,10 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
     loading: true,
     error: null
   });
+  const [locationName, setLocationName] = useState('');
+  const [locationError, setLocationError] = useState('');
+  const [sosAlert, setSosAlert] = useState('');
+  const [emergencyMessage, setEmergencyMessage] = useState('');
   const [riskLevel, setRiskLevel] = useState('LOW');
   const [riskReason, setRiskReason] = useState('Low crime area, well-lit streets');
   const [sosConfirm, setSosConfirm] = useState(false);
@@ -71,6 +75,8 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
         loading: false,
         error: null
       }));
+      // Store readable location name for UI
+      setLocationName(displayLocation);
     } catch (err) {
       setLocation(prev => ({
         ...prev,
@@ -243,10 +249,16 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
 
   const handleSOSPress = async () => {
     if (sosConfirm) {
-      // CRITICAL: Immediately trigger phone call to emergency number
+      // Show alert about sharing location
+      const locLink = getLocationLink(location.lat, location.lng);
+      const msg = `EMERGENCY: I need help. My location: ${locLink}`;
+      setEmergencyMessage(msg);
+      setSosAlert('Sharing your live location...');
+
+      // Trigger phone call
       window.location.href = 'tel:+917624828817';
 
-      // Then run background SOS actions (non-blocking)
+      // Run background SOS actions (non-blocking)
       const success = await sendSOS();
       if (success && onSOS) {
         onSOS({ lat: location.lat, lng: location.lng });
@@ -378,6 +390,7 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
             </button>
           </div>
         </div>
+        {sosAlert && <div className="sos-alert" style={{ background: '#fffae6', padding: '8px', marginTop: '8px', borderRadius: '4px', color: '#333' }}>{sosAlert}</div>}
       </header>
 
       <div className="home-content scroll-content">
@@ -406,6 +419,9 @@ export function HomeScreen({ onSOS, sosTriggered, user }) {
                   <span className="location-loading">Detecting...</span>
                 ) : location.text}
               </p>
+              {locationName && (
+                <p className="location-name" style={{ marginTop: '4px', color: '#555' }}>{locationName}</p>
+              )}
               {location.error && (
                 <button className="retry-btn" onClick={handleRetryLocation}>
                   Retry

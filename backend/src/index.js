@@ -19,8 +19,21 @@ console.log(`🔌 PORT: ${PORT}`);
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+const allowedOrigins = [
+  FRONTEND_URL,
+  'http://localhost:3000',
+  'https://avana.vercel.app'
+].filter(Boolean);
+
 app.use(cors({
-  origin: FRONTEND_URL
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin || allowedOrigins.some(o => origin.startsWith(o))) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all in development
+    }
+  }
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -42,11 +55,13 @@ function loadRoutes() {
     const riskRoutes = require('./routes/risk');
     const heatmapRoutes = require('./routes/heatmap');
     const sosRoutes = require('./routes/sos');
+    const chatRoutes = require('./routes/chat');
 
     app.use('/api/risk', riskRoutes);
     app.use('/api/heatmap', heatmapRoutes);
     app.use('/api/sos', sosRoutes);
-    console.log("✅ Routes loaded successfully");
+    app.use('/api/chat', chatRoutes);
+    console.log("✅ Routes loaded successfully (including /api/chat)");
   } catch (routeError) {
     console.error("❌ Error loading routes:", routeError.message);
   }
