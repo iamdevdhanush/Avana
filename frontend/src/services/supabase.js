@@ -374,13 +374,25 @@ export async function getCommunityPosts(limit = 50) {
 }
 
 export function subscribeToCommunityPosts(callback) {
-  return supabase
-    .channel('community_posts_changes')
-    .on('postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'community_posts' },
-      (payload) => callback(payload.new)
-    )
-    .subscribe();
+  try {
+    const channel = supabase
+      .channel('community_posts_changes')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'community_posts' },
+        (payload) => {
+          console.log('[Supabase] Realtime post received:', payload.new);
+          callback(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Supabase] Posts subscription status:', status);
+      });
+    
+    return channel;
+  } catch (err) {
+    console.error('[Supabase] Subscribe error:', err);
+    return { unsubscribe: () => {} };
+  }
 }
 
 export async function saveComment(comment) {

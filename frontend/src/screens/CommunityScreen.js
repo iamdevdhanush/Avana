@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  subscribeToPosts, createPost, toggleLike,
-  subscribeToComments, addComment, getUserLikes
-} from '../services/firebaseCommunity';
+  getCommunityPosts,
+  saveCommunityPost,
+  subscribeToCommunityPosts,
+  getComments,
+  saveComment,
+  getEmergencyContacts
+} from '../services/supabase';
 import './CommunityScreen.css';
 
-function timeAgo(date) {
+function timeAgo(dateString) {
   try {
-    const d = date instanceof Date ? date : new Date(date);
+    const date = new Date(dateString);
     const now = new Date();
-    const seconds = Math.floor((now - d) / 1000);
+    const seconds = Math.floor((now - date) / 1000);
     if (seconds < 60) return 'Just now';
     if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
@@ -25,130 +29,109 @@ export function CommunityScreen({ user }) {
   const [error, setError] = useState(null);
   const [newPostContent, setNewPostContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [activeComments, setActiveComments] = useState({});
+  const [newComments, setNewComments] = useState({});
+  const [sendingComment, setSendingComment] = useState({});
 
-  // Comments state
-  const [activeComments, setActiveComments] = useState({});   // postId -> comments[]
-  const [newComments, setNewComments] = useState({});          // postId -> string
-  const [sendingComment, setSendingComment] = useState({});    // postId -> bool
-  const commentUnsubsRef = useRef({});
+  const commentSubsRef = useRef({});
+  const postsSubRef = useRef(null);
 
-  // Likes state
-  const [userLikes, setUserLikes] = useState({});  // postId -> bool
-  const [likingPost, setLikingPost] = useState({}); // postId -> bool (prevent double-tap)
-
-  // ─── Real-time posts subscription ────────────────────────────
-  useEffect(() => {
-    const unsubscribe = subscribeToPosts((fetchedPosts, err) => {
-      if (err) {
-        setError('Could not load posts. Please check your connection.');
-        setLoading(false);
-        return;
-      }
-      setPosts(fetchedPosts);
+  // Initial fetch
+  const loadPosts = useCallback(async () => {
+    try {
       setError(null);
-      setLoading(false);
-
-      // Batch-check which posts the current user has liked
-      if (user?.id && fetchedPosts.length > 0) {
-        const postIds = fetchedPosts.map(p => p.id);
-        getUserLikes(postIds, user.id)
-          .then(likes => setUserLikes(prev => ({ ...prev, ...likes })))
-          .catch(() => {});
+      console.log('[Community] Fetching posts...');
+      const { data, error: fetchErr } = await getCommunityPosts(50);
+      
+      if (fetchErr) {
+        console.error('[Community] Fetch error:', fetchErr);
+        throw fetchErr;
       }
+      
+      console.log('[Community] Posts fetched:', data?.length || 0);
+      setPosts(data || []);
+    } catch (err) {
+      console.error('[Community] Error loading posts:', err);
+      setError('Could not load posts. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Setup initial fetch and real-time subscription
+  useEffect(() => {
+    loadPosts();
+
+    // Real-time subscription
+    console.log('[Community] Setting up realtime subscription...');
+    postsSubRef.current = subscribeToCommunityPosts((newPost) => {
+      console.log('[Community] New post received:', newPost);
+      setPosts(prev => {
+        // Prevent duplicates
+        if (prev.some(p => p.id === newPost.id)) {
+          return prev;
+        }
+        return [newPost, ...prev];
+      });
     });
 
     return () => {
-      unsubscribe();
-      // Clean up all comment subscriptions
-      Object.values(commentUnsubsRef.current).forEach(unsub => {
-        try { unsub(); } catch {}
+      if (postsSubRef.current) {
+        try {
+          postsSubRef.current.unsubscribe();
+          console.log('[Community] Unsubscribed from posts');
+        } catch (err) {
+          console.warn('[Community] Unsubscribe error:', err);
+        }
+      }
+      // Clean up comment subscriptions
+      Object.values(commentSubsRef.current).forEach(sub => {
+        try { sub.unsubscribe(); } catch {}
       });
-      commentUnsubsRef.current = {};
+      commentSubsRef.current = {};
     };
-  }, [user?.id]);
+  }, [loadPosts]);
 
-  // ─── Create Post (optimistic) ────────────────────────────────
-  const handlePostSubmit = useCallback(async () => {
+  const handlePostSubmit = async () => {
     if (!newPostContent.trim() || submitting) return;
     setSubmitting(true);
 
-    const tempId = `temp_${Date.now()}`;
-    const optimisticPost = {
-      id: tempId,
-      content: newPostContent.trim(),
-      userId: user?.id,
-      userName: user?.displayName || user?.name || 'You',
-      likesCount: 0,
-      commentsCount: 0,
-      createdAt: new Date(),
-      _optimistic: true
+    const submit = async (location) => {
+      try {
+        console.log('[Community] Submitting post...');
+        const { error: postErr } = await saveCommunityPost({
+          userId: user?.id,
+          content: newPostContent.trim(),
+          location
+        });
+        
+        if (postErr) {
+          console.error('[Community] Post error:', postErr);
+          throw postErr;
+        }
+        
+        console.log('[Community] Post submitted successfully');
+        setNewPostContent('');
+      } catch (err) {
+        console.error('[Community] Error posting:', err);
+        setError('Could not submit post. Try again.');
+      } finally {
+        setSubmitting(false);
+      }
     };
 
-    // Optimistic: prepend immediately
-    setPosts(prev => [optimisticPost, ...prev]);
-    setNewPostContent('');
-
-    try {
-      let location = null;
-      if (navigator.geolocation) {
-        try {
-          const pos = await new Promise((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-          );
-          location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        } catch {}
-      }
-
-      await createPost({
-        content: optimisticPost.content,
-        userId: user?.id,
-        userName: optimisticPost.userName,
-        location
-      });
-      // onSnapshot will replace the optimistic post with the real one
-    } catch (err) {
-      console.error('Error posting:', err);
-      setError('Could not submit post. Try again.');
-      // Roll back optimistic post
-      setPosts(prev => prev.filter(p => p.id !== tempId));
-    } finally {
-      setSubmitting(false);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => submit({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => submit(null),
+        { timeout: 5000 }
+      );
+    } else {
+      submit(null);
     }
-  }, [newPostContent, submitting, user]);
+  };
 
-  // ─── Like Toggle (optimistic) ────────────────────────────────
-  const handleLikeToggle = useCallback(async (postId) => {
-    if (!user?.id || likingPost[postId]) return;
-
-    const wasLiked = !!userLikes[postId];
-
-    // Optimistic update
-    setUserLikes(prev => ({ ...prev, [postId]: !wasLiked }));
-    setPosts(prev => prev.map(p =>
-      p.id === postId
-        ? { ...p, likesCount: Math.max(0, (p.likesCount || 0) + (wasLiked ? -1 : 1)) }
-        : p
-    ));
-
-    setLikingPost(prev => ({ ...prev, [postId]: true }));
-    try {
-      await toggleLike(postId, user.id);
-    } catch (err) {
-      console.error('Like error:', err);
-      // Roll back
-      setUserLikes(prev => ({ ...prev, [postId]: wasLiked }));
-      setPosts(prev => prev.map(p =>
-        p.id === postId
-          ? { ...p, likesCount: Math.max(0, (p.likesCount || 0) + (wasLiked ? 1 : -1)) }
-          : p
-      ));
-    } finally {
-      setLikingPost(prev => ({ ...prev, [postId]: false }));
-    }
-  }, [user?.id, userLikes, likingPost]);
-
-  // ─── Comments ────────────────────────────────────────────────
-  const toggleCommentsSection = useCallback((postId) => {
+  const toggleComments = async (postId) => {
     if (activeComments[postId] !== undefined) {
       // Collapse
       setActiveComments(prev => {
@@ -156,63 +139,38 @@ export function CommunityScreen({ user }) {
         delete next[postId];
         return next;
       });
-      if (commentUnsubsRef.current[postId]) {
-        commentUnsubsRef.current[postId]();
-        delete commentUnsubsRef.current[postId];
+      if (commentSubsRef.current[postId]) {
+        try { commentSubsRef.current[postId].unsubscribe(); } catch {}
+        delete commentSubsRef.current[postId];
       }
     } else {
-      // Expand — subscribe to real-time comments
-      setActiveComments(prev => ({ ...prev, [postId]: [] })); // show empty while loading
-      commentUnsubsRef.current[postId] = subscribeToComments(postId, (comments) => {
-        setActiveComments(prev =>
-          prev[postId] !== undefined ? { ...prev, [postId]: comments } : prev
-        );
-      });
+      // Load comments
+      try {
+        const { data } = await getComments(postId);
+        setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
+      } catch (err) {
+        console.error('[Community] Error loading comments:', err);
+      }
     }
-  }, [activeComments]);
+  };
 
-  const handleCommentSubmit = useCallback(async (postId) => {
+  const handleCommentSubmit = async (postId) => {
     const content = newComments[postId]?.trim();
     if (!content || sendingComment[postId]) return;
-
     setSendingComment(prev => ({ ...prev, [postId]: true }));
-
-    // Optimistic comment
-    const tempComment = {
-      id: `temp_${Date.now()}`,
-      content,
-      userId: user?.id,
-      userName: user?.displayName || user?.name || 'You',
-      createdAt: new Date(),
-      _optimistic: true
-    };
-    setActiveComments(prev => ({
-      ...prev,
-      [postId]: [...(prev[postId] || []), tempComment]
-    }));
-    setNewComments(prev => ({ ...prev, [postId]: '' }));
-
     try {
-      await addComment({
-        postId,
-        content,
-        userId: user?.id,
-        userName: tempComment.userName
-      });
-      // onSnapshot will replace optimistic with real
+      await saveComment({ postId, userId: user?.id, content });
+      setNewComments(prev => ({ ...prev, [postId]: '' }));
+      // Refresh comments
+      const { data } = await getComments(postId);
+      setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
     } catch (err) {
-      console.error('Error submitting comment:', err);
-      // Roll back
-      setActiveComments(prev => ({
-        ...prev,
-        [postId]: (prev[postId] || []).filter(c => c.id !== tempComment.id)
-      }));
+      console.error('[Community] Comment error:', err);
     } finally {
       setSendingComment(prev => ({ ...prev, [postId]: false }));
     }
-  }, [newComments, sendingComment, user]);
+  };
 
-  // ─── Render ──────────────────────────────────────────────────
   return (
     <div className="community-screen">
       <header className="page-header">
@@ -259,29 +217,17 @@ export function CommunityScreen({ user }) {
             <p>No community posts yet. Be the first to share!</p>
           </div>
         ) : posts.map(post => (
-          <div key={post.id} className={`post-card card${post._optimistic ? ' post-optimistic' : ''}`}>
+          <div key={post.id} className="post-card card">
             <div className="post-header">
-              <strong>{post.userName || 'Anonymous'}</strong>
-              <span className="post-time">{timeAgo(post.createdAt)}</span>
+              <strong>{post.user_profiles?.name || 'Anonymous'}</strong>
+              <span className="post-time">{timeAgo(post.created_at)}</span>
             </div>
             <p className="post-content">{post.content}</p>
-            {post.imageUrl && (
-              <div className="post-image">
-                <img src={post.imageUrl} alt="Post" loading="lazy" />
-              </div>
-            )}
             <div className="post-actions">
-              <button
-                className={`like-btn${userLikes[post.id] ? ' liked' : ''}`}
-                onClick={() => handleLikeToggle(post.id)}
-                disabled={post._optimistic || likingPost[post.id]}
-              >
-                {userLikes[post.id] ? '❤️' : '🤍'} {post.likesCount || 0}
-              </button>
-              <button className="comment-toggle-btn" onClick={() => toggleCommentsSection(post.id)}>
+              <button className="comment-toggle-btn" onClick={() => toggleComments(post.id)}>
                 💬 {activeComments[post.id] !== undefined
                   ? `Hide (${activeComments[post.id].length})`
-                  : `Comments${post.commentsCount ? ` (${post.commentsCount})` : ''}`}
+                  : 'Comments'}
               </button>
             </div>
 
@@ -291,10 +237,10 @@ export function CommunityScreen({ user }) {
                   {activeComments[post.id].length === 0 ? (
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>No comments yet</p>
                   ) : activeComments[post.id].map(comment => (
-                    <div key={comment.id} className={`comment${comment._optimistic ? ' comment-optimistic' : ''}`}>
-                      <strong>{comment.userName || 'Anonymous'}</strong>
+                    <div key={comment.id} className="comment">
+                      <strong>{comment.user_profiles?.name || 'Anonymous'}</strong>
                       <span> {comment.content}</span>
-                      <div className="comment-time">{timeAgo(comment.createdAt)}</div>
+                      <div className="comment-time">{timeAgo(comment.created_at)}</div>
                     </div>
                   ))}
                 </div>
