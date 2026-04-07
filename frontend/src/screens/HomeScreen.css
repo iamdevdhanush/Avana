@@ -17,6 +17,93 @@
   align-items: flex-start;
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guardian-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px;
+  color: #8A8A9A;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.guardian-toggle.active {
+  background: rgba(0,200,83,0.15);
+  border-color: rgba(0,200,83,0.3);
+  color: #00C853;
+}
+
+.guardian-toggle:active {
+  transform: scale(0.95);
+}
+
+.location-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: #00C853;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.location-loading {
+  color: #8A8A9A;
+}
+
+.retry-btn {
+  margin-top: 4px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 12px;
+  color: #8A8A9A;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.retry-btn:active {
+  background: rgba(255,255,255,0.15);
+}
+
+.guardian-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px;
+  color: #00C853;
+}
+
+.guardian-dot {
+  width: 8px;
+  height: 8px;
+  background: #00C853;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .app-logo {
   font-size: 24px;
   font-weight: 700;
@@ -323,4 +410,124 @@
     transform: scale(1.5);
     opacity: 0;
   }
+}
+
+.report-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.report-modal {
+  background: #1A1F28;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.report-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.report-modal-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.report-modal-header button {
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.report-modal-content {
+  padding: 20px;
+}
+
+.report-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.report-type-btn {
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  color: #8A8A9A;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.report-type-btn.active {
+  background: rgba(0,200,83,0.15);
+  border-color: rgba(0,200,83,0.3);
+  color: #00C853;
+}
+
+.report-modal-content textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 12px;
+  color: #fff;
+  font-size: 14px;
+  resize: none;
+  font-family: inherit;
+  margin-bottom: 12px;
+}
+
+.report-modal-content textarea:focus {
+  outline: none;
+  border-color: #00C853;
+}
+
+.report-location {
+  font-size: 12px;
+  color: #8A8A9A;
+  margin-bottom: 16px;
+}
+
+.report-submit-btn {
+  width: 100%;
+  padding: 14px;
+  background: #00C853;
+  border: none;
+  border-radius: 12px;
+  color: #000;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-submit-btn:disabled {
+  opacity: 0.5;
+}
+
+.report-submit-btn:active {
+  transform: scale(0.98);
 }
