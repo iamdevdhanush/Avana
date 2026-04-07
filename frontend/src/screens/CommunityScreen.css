@@ -160,3 +160,46 @@
   font-size: 14px;
   color: var(--text-muted);
 }
+
+/* Like button */
+.like-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.15s ease;
+}
+.like-btn:active {
+  transform: scale(1.15);
+}
+.like-btn.liked {
+  color: #FF3D3D;
+}
+
+/* Optimistic states */
+.post-optimistic {
+  opacity: 0.7;
+}
+.comment-optimistic {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Post image */
+.post-image {
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.post-image img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  display: block;
+}
+
