@@ -55,11 +55,11 @@ export function SafetyScreen({ onSOS, user }) {
   }, [chatMessages]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (user?.id) {
       loadEmergencyContacts();
       getCurrentLocation();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const getCurrentLocation = () => {
