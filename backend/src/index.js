@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 console.log("🚀 Starting Avana backend...");
 
 process.on("uncaughtException", (err) => {
