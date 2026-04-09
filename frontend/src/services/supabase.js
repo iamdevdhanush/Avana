@@ -203,7 +203,7 @@ export async function getUserProfile(userId) {
       .maybeSingle();
     
     if (error) {
-      console.error('[DB] Get profile error:', error);
+      console.error('[DB] Get profile error:', error.code, error.message);
       return { data: null, error };
     }
     
@@ -216,6 +216,12 @@ export async function getUserProfile(userId) {
 
 export async function saveCommunityPost(post) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save post');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     console.log('[DB] Saving community post for user:', post.userId);
     const locationValue = post.location
       ? (typeof post.location === 'string' ? post.location : JSON.stringify(post.location))
@@ -232,8 +238,15 @@ export async function saveCommunityPost(post) {
       .single();
     
     if (error) {
-      console.error('[DB] Save post error:', error);
+      console.error('[DB] Save post error:', error.code, error.message);
       console.error('[DB] Error details:', JSON.stringify(error, null, 2));
+      
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED - User needs to be authenticated or RLS policy missing');
+      } else if (error.code === 'PGRST301') {
+        console.error('[DB] PERMISSION DENIED - Check RLS policies in Supabase dashboard');
+      }
+      
       return { data: null, error };
     }
     
@@ -306,6 +319,12 @@ export function subscribeToCommunityPosts(callback) {
 
 export async function saveComment(comment) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save comment');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('post_comments')
       .insert([{
@@ -317,7 +336,10 @@ export async function saveComment(comment) {
       .single();
     
     if (error) {
-      console.error('[DB] Save comment error:', error);
+      console.error('[DB] Save comment error:', error.code, error.message);
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED');
+      }
       return { data: null, error };
     }
     
@@ -372,6 +394,12 @@ export function subscribeToComments(postId, callback) {
 
 export async function saveSafetyEvent(event) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save safety event');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('safety_events')
       .insert([{
@@ -384,6 +412,13 @@ export async function saveSafetyEvent(event) {
       }])
       .select()
       .single();
+    
+    if (error) {
+      console.error('[DB] Save safety event error:', error.code, error.message);
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED - Check auth.uid() = user_id policy');
+      }
+    }
     
     return { data, error };
   } catch (err) {
@@ -409,6 +444,12 @@ export async function getSafetyEvents(limit = 100) {
 
 export async function saveCommunityReport(report) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save report');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('community_reports')
       .insert([{
@@ -421,6 +462,13 @@ export async function saveCommunityReport(report) {
       }])
       .select()
       .single();
+    
+    if (error) {
+      console.error('[DB] Save community report error:', error.code, error.message);
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED - Check auth.role() policy');
+      }
+    }
     
     return { data, error };
   } catch (err) {
@@ -446,6 +494,12 @@ export async function getCommunityReports(limit = 50) {
 
 export async function triggerSOSAlert(alert) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot trigger SOS');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('sos_alerts')
       .insert([{
@@ -459,6 +513,10 @@ export async function triggerSOSAlert(alert) {
       .select()
       .single();
     
+    if (error) {
+      console.error('[DB] SOS alert error:', error.code, error.message);
+    }
+    
     return { data, error };
   } catch (err) {
     console.error('[DB] SOS alert error:', err);
@@ -468,6 +526,12 @@ export async function triggerSOSAlert(alert) {
 
 export async function saveEmergencyContact(contact) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save emergency contact');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('emergency_contacts')
       .insert([{
@@ -478,6 +542,13 @@ export async function saveEmergencyContact(contact) {
       }])
       .select()
       .single();
+    
+    if (error) {
+      console.error('[DB] Save emergency contact error:', error.code, error.message);
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED');
+      }
+    }
     
     return { data, error };
   } catch (err) {
@@ -516,6 +587,12 @@ export async function deleteEmergencyContact(contactId) {
 
 export async function saveEvidence(evidence) {
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.error('[DB] NOT AUTHENTICATED - Cannot save evidence');
+      return { data: null, error: { message: 'User not authenticated', code: 'NOT_AUTHENTICATED' } };
+    }
+    
     const { data, error } = await supabase
       .from('evidence')
       .insert([{
@@ -527,6 +604,13 @@ export async function saveEvidence(evidence) {
       }])
       .select()
       .single();
+    
+    if (error) {
+      console.error('[DB] Save evidence error:', error.code, error.message);
+      if (error.code === '42501') {
+        console.error('[DB] RLS POLICY DENIED');
+      }
+    }
     
     return { data, error };
   } catch (err) {
