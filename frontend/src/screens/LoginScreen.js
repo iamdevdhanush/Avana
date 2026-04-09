@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import './LoginScreen.css';
 
 export function LoginScreen() {
-  const { loginWithEmail, loginWithGoogle, signupWithEmail, sendPasswordReset, loading: authLoading, error: authError } = useAuth();
+  const { loginWithEmail, signupWithEmail, loading: authLoading, error: authError, clearError } = useAuth();
   
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
@@ -13,12 +13,7 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-
-  // Forgot password state
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   useEffect(() => {
     if (authError) {
@@ -26,32 +21,51 @@ export function LoginScreen() {
     }
   }, [authError]);
 
+  useEffect(() => {
+    return () => {
+      clearError();
+    };
+  }, [isLogin, clearError]);
+
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
   const validateInputs = () => {
-    let isValid = true;
     setError('');
+    setSuccessMessage('');
 
     if (!email.trim()) {
       setError('Email is required');
-      isValid = false;
-    } else if (!validateEmail(email)) {
+      return false;
+    }
+    if (!validateEmail(email)) {
       setError('Please enter a valid email');
-      isValid = false;
+      return false;
     }
 
     if (!password) {
       setError('Password is required');
-      isValid = false;
-    } else if (password.length < 6) {
+      return false;
+    }
+    if (password.length < 6) {
       setError('Password must be at least 6 characters');
-      isValid = false;
+      return false;
     }
 
-    return isValid;
+    if (!isLogin) {
+      if (!age || isNaN(age)) {
+        setError('Please enter a valid age');
+        return false;
+      }
+      if (parseInt(age, 10) < 18 && !guardianPhone) {
+        setError('Guardian phone number is required for users under 18');
+        return false;
+      }
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e) => {
@@ -69,52 +83,36 @@ export function LoginScreen() {
       if (isLogin) {
         await loginWithEmail(email, password);
       } else {
-        if (!age || isNaN(age)) {
-          setError('Please enter a valid age');
-          setLoading(false);
-          return;
-        }
-        if (parseInt(age, 10) < 18 && !guardianPhone) {
-          setError('Guardian phone number is required for users under 18');
-          setLoading(false);
-          return;
-        }
-
-        await signupWithEmail(email, password, {
+        const result = await signupWithEmail(email, password, {
           name: email.split('@')[0],
-          age: parseInt(age, 10),
+          age: parseInt(age, 10) || 18,
           phone: '',
           guardian_phone: parseInt(age, 10) < 18 ? guardianPhone : null
         });
 
-        setSuccessMessage('Account created successfully! Please check your email to verify.');
-        setIsLogin(true);
-        setPassword('');
-        setAge('');
-        setGuardianPhone('');
+        if (result?.needsVerification) {
+          setNeedsVerification(true);
+          setSuccessMessage('Account created! Please check your email to verify your account before signing in.');
+          setEmail('');
+          setPassword('');
+          setAge('');
+          setGuardianPhone('');
+        }
       }
     } catch (err) {
       console.error('Auth error:', err);
       let errorMessage = 'Something went wrong. Please try again.';
       
-      if (err.code === 'auth/invalid-email' || err.message?.includes('invalid-email')) {
-        errorMessage = 'Invalid email address';
-      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.message?.includes('wrong-password') || err.message?.includes('invalid-credential')) {
+      if (err.message?.includes('Email not confirmed') || err.code === 'email_not_confirmed') {
+        errorMessage = 'Please verify your email first. Check your inbox for the verification link.';
+      } else if (err.message?.includes('Invalid login credentials') || err.message?.includes('Invalid credentials')) {
         errorMessage = 'Incorrect email or password';
-      } else if (err.code === 'auth/user-not-found' || err.message?.includes('user-not-found')) {
-        errorMessage = 'No account found with this email';
-      } else if (err.code === 'auth/email-already-in-use' || err.message?.includes('email-already-in-use')) {
-        errorMessage = 'An account already exists with this email';
-      } else if (err.code === 'auth/weak-password' || err.message?.includes('weak-password')) {
-        errorMessage = 'Password should be at least 6 characters';
-      } else if (err.code === 'auth/user-disabled') {
-        errorMessage = 'This account has been disabled';
-      } else if (err.code === 'auth/too-many-requests' || err.message?.includes('too-many-requests')) {
-        errorMessage = 'Too many attempts. Please try again later.';
-      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        errorMessage = 'Sign-in was cancelled';
-      } else if (err.code === 'auth/network-request-failed' || err.message?.includes('network')) {
-        errorMessage = 'Network error. Please check your connection.';
+      } else if (err.message?.includes('User already registered') || err.code === 'user_already_exists') {
+        errorMessage = 'An account already exists with this email. Try signing in instead.';
+      } else if (err.message?.includes('Password should be at least')) {
+        errorMessage = 'Password must be at least 6 characters';
+      } else if (err.message?.includes('To sign up, please accept')) {
+        errorMessage = err.message;
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -125,69 +123,36 @@ export function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleResendVerification = async () => {
+    if (!email.trim()) {
+      setError('Please enter your email address first');
+      return;
+    }
+    
     setLoading(true);
     setError('');
-    setSuccessMessage('');
-
+    
     try {
-      await loginWithGoogle();
-    } catch (err) {
-      console.error('Google auth error:', err);
-      let errorMessage = 'Google sign-in failed';
+      const { resendConfirmationEmail } = await import('../services/supabase');
+      const { error } = await resendConfirmationEmail(email);
       
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        errorMessage = 'Sign-in was cancelled';
-      } else if (err.code === 'auth/operation-not-allowed') {
-        errorMessage = 'Google sign-in is not enabled';
-      } else if (err.code === 'auth/unauthorized-domain') {
-        errorMessage = 'This domain is not authorized for Google sign-in';
-      } else if (err.code === 'auth/network-request-failed') {
-        errorMessage = 'Network error. Please try again.';
-      } else if (err.message) {
-        errorMessage = err.message;
+      if (error) {
+        setError(error.message || 'Could not resend verification email');
+      } else {
+        setSuccessMessage('Verification email sent! Check your inbox.');
       }
-      
-      setError(errorMessage);
+    } catch (err) {
+      setError('Could not resend verification email');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!resetEmail.trim()) {
-      setError('Please enter your email address');
-      return;
-    }
-    if (!validateEmail(resetEmail)) {
-      setError('Please enter a valid email');
-      return;
-    }
-
-    setResetLoading(true);
+  const handleSwitchMode = () => {
+    setIsLogin(!isLogin);
     setError('');
-
-    try {
-      await sendPasswordReset(resetEmail);
-      setResetSent(true);
-    } catch (err) {
-      console.error('Password reset error:', err);
-      let errorMessage = 'Could not send reset email';
-      
-      if (err.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      } else if (err.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email';
-      } else if (err.code === 'auth/network-request-failed') {
-        errorMessage = 'Network error. Please try again.';
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setResetLoading(false);
-    }
+    setSuccessMessage('');
+    setNeedsVerification(false);
   };
 
   if (authLoading) {
@@ -227,7 +192,7 @@ export function LoginScreen() {
           </div>
         )}
 
-        {successMessage && (
+        {successMessage && !error && (
           <div className="success-message">
             {successMessage}
           </div>
@@ -243,23 +208,27 @@ export function LoginScreen() {
               onChange={(e) => setEmail(e.target.value)}
               required
               disabled={loading}
+              autoComplete="email"
             />
           </div>
 
-          <div className="input-group">
-            <input
-              type="password"
-              className="input-field"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-              disabled={loading}
-            />
-          </div>
+          {!needsVerification && (
+            <div className="input-group">
+              <input
+                type="password"
+                className="input-field"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                disabled={loading}
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+              />
+            </div>
+          )}
 
-          {!isLogin && (
+          {!isLogin && !needsVerification && (
             <>
               <div className="input-group">
                 <input
@@ -268,7 +237,7 @@ export function LoginScreen() {
                   placeholder="Age"
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  required={!isLogin}
+                  required
                   min="1"
                   max="120"
                   disabled={loading}
@@ -290,51 +259,35 @@ export function LoginScreen() {
             </>
           )}
 
-          {isLogin && (
-            <button type="button" className="forgot-link" onClick={() => { setShowForgotPassword(true); setError(''); }}>
-              Forgot password?
+          {needsVerification && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              onClick={handleResendVerification}
+              disabled={loading}
+              style={{ marginBottom: '8px' }}
+            >
+              Resend Verification Email
             </button>
           )}
 
           <button 
             type="submit" 
             className="btn btn-primary btn-block"
-            disabled={loading}
+            disabled={loading || needsVerification}
           >
-            {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+            {loading ? 'Please wait...' : (needsVerification ? 'Check Your Email' : (isLogin ? 'Sign In' : 'Create Account'))}
           </button>
         </form>
 
-        <div className="divider">
-          <span>or</span>
-        </div>
-
-        <button 
-          className="social-btn" 
-          onClick={handleGoogleLogin}
-          disabled={loading}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-          </svg>
-          Continue with Google
-        </button>
-
         <p className="switch-text">
-          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          {needsVerification ? 'Already verified? ' : (isLogin ? "Don't have an account? " : "Already have an account? ")}
           <button 
             className="switch-btn"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError('');
-              setSuccessMessage('');
-            }}
+            onClick={handleSwitchMode}
             disabled={loading}
           >
-            {isLogin ? 'Sign Up' : 'Sign In'}
+            {needsVerification ? 'Sign In' : (isLogin ? 'Sign Up' : 'Sign In')}
           </button>
         </p>
 
@@ -343,46 +296,6 @@ export function LoginScreen() {
           <span>Terms of Service</span> and <span>Privacy Policy</span>
         </p>
       </div>
-
-      {/* Forgot Password Modal */}
-      {showForgotPassword && (
-        <div className="forgot-password-overlay">
-          <div className="forgot-password-modal">
-            <h2>Reset Password</h2>
-            <p>Enter your email address and we'll send you a link to reset your password.</p>
-            
-            {resetSent ? (
-              <div className="success-message">
-                Password reset link sent! Check your email.
-              </div>
-            ) : (
-              <>
-                <input
-                  type="email"
-                  className="input-field"
-                  placeholder="Email address"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                />
-                <button 
-                  className="btn btn-primary btn-block"
-                  onClick={handleForgotPassword}
-                  disabled={resetLoading}
-                >
-                  {resetLoading ? 'Sending...' : 'Send Reset Link'}
-                </button>
-              </>
-            )}
-            
-            <button 
-              className="forgot-password-close"
-              onClick={() => { setShowForgotPassword(false); setResetEmail(''); setResetSent(false); setError(''); }}
-            >
-              Back to Login
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

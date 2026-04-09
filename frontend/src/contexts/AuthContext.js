@@ -1,17 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updateProfile,
-  signInWithPopup,
-  GoogleAuthProvider,
-  sendPasswordResetEmail
-} from 'firebase/auth';
-import { auth } from '../firebase';
-import { createOrGetUserProfile } from '../services/userProfileService';
-import { saveUserProfile } from '../services/supabase';
+  signUp as supabaseSignUp,
+  signIn as supabaseSignIn,
+  signOut as supabaseSignOut,
+  getCurrentUser,
+  onAuthStateChange,
+  saveUserProfile,
+  getUserProfile
+} from '../services/supabase';
 
 const AuthContext = createContext(null);
 
@@ -22,221 +18,219 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
   const [consentGiven, setConsentGiven] = useState(false);
 
-  // BUG FIX: Stable consent key helper — does not depend on user state ref
-  const getConsentKey = (uid) => uid ? `avana_consent_${uid}` : null;
-
-  const setConsent = useCallback((value) => {
-    // Access current user uid from auth directly to avoid stale closure
-    const uid = auth.currentUser?.uid;
-    const key = getConsentKey(uid);
-    if (key) {
-      localStorage.setItem(key, value ? 'true' : 'false');
+  const loadUserProfile = useCallback(async (userId) => {
+    try {
+      const { data, error: profileError } = await getUserProfile(userId);
+      if (profileError) {
+        console.warn('[Auth] Could not load profile:', profileError);
+      }
+      return data;
+    } catch (err) {
+      console.error('[Auth] Load profile error:', err);
+      return null;
     }
-    setConsentGiven(value);
   }, []);
 
-  const clearConsent = useCallback(() => {
-    const uid = auth.currentUser?.uid;
-    const key = getConsentKey(uid);
-    if (key) localStorage.removeItem(key);
-    setConsentGiven(false);
-  }, []);
+  const syncUserState = useCallback(async (supabaseUser) => {
+    if (supabaseUser) {
+      const userData = {
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'User',
+        phone: supabaseUser.user_metadata?.phone || '',
+        guardian_phone: supabaseUser.user_metadata?.guardian_phone || null,
+      };
 
-  const hasConsent = useCallback(() => {
-    const uid = auth.currentUser?.uid;
-    const key = getConsentKey(uid);
-    return key ? localStorage.getItem(key) === 'true' : false;
-  }, []);
+      setUser(userData);
 
-  // ── Auth state listener ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      setError(null);
-
-      if (firebaseUser) {
-        try {
-          const userProfile = await createOrGetUserProfile(firebaseUser);
-
-          const userData = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: userProfile?.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-            age: userProfile?.age,
-            phone: userProfile?.phone,
-            guardian_phone: userProfile?.guardian_phone,
-            photoURL: firebaseUser.photoURL
-          };
-
-          setUser(userData);
-          setProfile(userProfile);
-
-          // Restore consent from storage
-          const consentKey = getConsentKey(firebaseUser.uid);
-          setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
-        } catch (err) {
-          console.error('Error loading user profile:', err);
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-            photoURL: firebaseUser.photoURL
-          });
-          setProfile(null);
-          setConsentGiven(false);
-        }
+      const userProfile = await loadUserProfile(supabaseUser.id);
+      if (userProfile) {
+        setProfile(userProfile);
       } else {
+        setProfile(userData);
+      }
+
+      const consentKey = `avana_consent_${supabaseUser.id}`;
+      setConsentGiven(localStorage.getItem(consentKey) === 'true');
+    } else {
+      setUser(null);
+      setProfile(null);
+      setConsentGiven(false);
+    }
+  }, [loadUserProfile]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (mounted) {
+          await syncUserState(currentUser);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('[Auth] Init error:', err);
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
+      console.log('[Auth] Auth event:', event);
+      
+      if (!mounted) return;
+
+      if (event === 'SIGNED_OUT' || !session) {
         setUser(null);
         setProfile(null);
         setConsentGiven(false);
+        setLoading(false);
+      } else if (session?.user) {
+        await syncUserState(session.user);
       }
-
-      setLoading(false);
     });
 
-    return () => unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [syncUserState]);
 
-  // ── Login with email ─────────────────────────────────────────────────────────
   const loginWithEmail = useCallback(async (email, password) => {
     setError(null);
+    setLoading(true);
+
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const userProfile = await createOrGetUserProfile(result.user);
+      const { data, error: signInError } = await supabaseSignIn(email, password);
+
+      if (signInError) {
+        throw signInError;
+      }
+
+      if (!data.user?.email_confirmed_at) {
+        await supabaseSignOut();
+        throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+      }
 
       const userData = {
-        id: result.user.uid,
-        email: result.user.email,
-        name: userProfile?.name || result.user.displayName || result.user.email?.split('@')[0] || 'User',
-        age: userProfile?.age,
-        phone: userProfile?.phone,
-        guardian_phone: userProfile?.guardian_phone,
-        photoURL: result.user.photoURL
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
+        phone: data.user.user_metadata?.phone || '',
+        guardian_phone: data.user.user_metadata?.guardian_phone || null,
       };
 
       setUser(userData);
-      setProfile(userProfile);
 
-      const consentKey = getConsentKey(result.user.uid);
-      setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
+      const userProfile = await loadUserProfile(data.user.id);
+      setProfile(userProfile || userData);
 
-      return userData;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    }
-  }, []);
-
-  // ── Login with Google ────────────────────────────────────────────────────────
-  const loginWithGoogle = useCallback(async () => {
-    setError(null);
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const userProfile = await createOrGetUserProfile(result.user);
-
-      const userData = {
-        id: result.user.uid,
-        email: result.user.email,
-        name: userProfile?.name || result.user.displayName || result.user.email?.split('@')[0] || 'User',
-        age: userProfile?.age,
-        phone: userProfile?.phone,
-        guardian_phone: userProfile?.guardian_phone,
-        photoURL: result.user.photoURL
-      };
-
-      setUser(userData);
-      setProfile(userProfile);
-
-      const consentKey = getConsentKey(result.user.uid);
-      setConsentGiven(consentKey ? localStorage.getItem(consentKey) === 'true' : false);
+      const consentKey = `avana_consent_${data.user.id}`;
+      setConsentGiven(localStorage.getItem(consentKey) === 'true');
 
       return userData;
     } catch (err) {
-      setError(err.message);
+      console.error('[Auth] Login error:', err);
+      setError(err.message || 'Login failed');
       throw err;
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [loadUserProfile]);
 
-  // ── Signup with email ────────────────────────────────────────────────────────
-  // BUG FIX: Now passes additionalData to createOrGetUserProfile so age/guardian_phone is saved
   const signupWithEmail = useCallback(async (email, password, additionalData = {}) => {
     setError(null);
+    setLoading(true);
+
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-
-      // Update Firebase display name immediately
       const displayName = additionalData.name || email.split('@')[0];
-      await updateProfile(result.user, { displayName });
-
-      // BUG FIX: Pass extraData so the profile is created with correct age/guardian data
-      const userProfile = await createOrGetUserProfile(result.user, {
+      
+      const { data, error: signUpError } = await supabaseSignUp(email, password, {
         name: displayName,
-        age: additionalData.age ?? 18,
+        age: additionalData.age || 18,
         phone: additionalData.phone || '',
         guardian_phone: additionalData.guardian_phone || null,
       });
 
-      // If createOrGetUserProfile returned an existing profile (e.g., race condition),
-      // force save the signup data through saveUserProfile directly
-      if (!userProfile?.age || userProfile.age === 18) {
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      if (data.user && !data.user.email_confirmed_at) {
         await saveUserProfile({
-          id: result.user.uid,
+          id: data.user.id,
           name: displayName,
-          age: additionalData.age ?? 18,
+          age: additionalData.age || 18,
           phone: additionalData.phone || '',
           guardian_phone: additionalData.guardian_phone || null,
         });
+
+        return {
+          needsVerification: true,
+          message: 'Account created! Please check your email to verify your account before signing in.'
+        };
       }
 
       const userData = {
-        id: result.user.uid,
-        email: result.user.email,
+        id: data.user.id,
+        email: data.user.email,
         name: displayName,
         age: additionalData.age,
         phone: additionalData.phone || '',
         guardian_phone: additionalData.guardian_phone || null,
-        photoURL: result.user.photoURL
       };
 
       setUser(userData);
       setProfile(userData);
-      setConsentGiven(false);
 
       return userData;
     } catch (err) {
-      setError(err.message);
+      console.error('[Auth] Signup error:', err);
+      setError(err.message || 'Signup failed');
       throw err;
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  // ── Logout ───────────────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
     setError(null);
+
     try {
-      // Clear consent before signing out so key is available
-      clearConsent();
-      await firebaseSignOut(auth);
+      const { error: signOutError } = await supabaseSignOut();
+      if (signOutError) {
+        throw signOutError;
+      }
+
       setUser(null);
       setProfile(null);
       setConsentGiven(false);
     } catch (err) {
-      setError(err.message);
-      throw err;
-    }
-  }, [clearConsent]);
-
-  // ── Password Reset ─────────────────────────────────────────────────────────────
-  const sendPasswordReset = useCallback(async (email) => {
-    setError(null);
-    try {
-      await sendPasswordResetEmail(auth, email);
-    } catch (err) {
-      setError(err.message);
+      console.error('[Auth] Logout error:', err);
+      setError(err.message || 'Logout failed');
       throw err;
     }
   }, []);
+
+  const setConsent = useCallback((value) => {
+    if (user?.id) {
+      const consentKey = `avana_consent_${user.id}`;
+      localStorage.setItem(consentKey, value ? 'true' : 'false');
+    }
+    setConsentGiven(value);
+  }, [user]);
+
+  const clearConsent = useCallback(() => {
+    if (user?.id) {
+      const consentKey = `avana_consent_${user.id}`;
+      localStorage.removeItem(consentKey);
+    }
+    setConsentGiven(false);
+  }, [user]);
 
   const value = {
     user,
@@ -245,13 +239,11 @@ export function AuthProvider({ children }) {
     error,
     consentGiven,
     loginWithEmail,
-    loginWithGoogle,
     signupWithEmail,
     logout,
-    sendPasswordReset,
     setConsent,
     clearConsent,
-    hasConsent
+    clearError: () => setError(null)
   };
 
   return (

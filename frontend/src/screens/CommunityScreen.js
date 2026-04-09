@@ -4,7 +4,8 @@ import {
   saveCommunityPost,
   subscribeToCommunityPosts,
   getComments,
-  saveComment
+  saveComment,
+  unsubscribe
 } from '../services/supabase';
 import './CommunityScreen.css';
 
@@ -35,38 +36,37 @@ export function CommunityScreen({ user }) {
   const commentSubsRef = useRef({});
   const postsSubRef = useRef(null);
 
-  // Initial fetch
   const loadPosts = useCallback(async () => {
     try {
       setError(null);
       console.log('[Community] Fetching posts...');
+      
       const { data, error: fetchErr } = await getCommunityPosts(50);
       
       if (fetchErr) {
         console.error('[Community] Fetch error:', fetchErr);
-        throw fetchErr;
+        console.error('[Community] Error code:', fetchErr.code);
+        console.error('[Community] Error message:', fetchErr.message);
+        setError(`Failed to load posts: ${fetchErr.message}`);
+        return;
       }
       
       console.log('[Community] Posts fetched:', data?.length || 0);
       setPosts(data || []);
     } catch (err) {
-      console.error('[Community] Error loading posts:', err);
-      setError('Could not load posts. Please check your connection.');
+      console.error('[Community] Exception loading posts:', err);
+      setError('Failed to load posts. Please check your connection.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Setup initial fetch and real-time subscription
   useEffect(() => {
     loadPosts();
 
-    // Real-time subscription
-    console.log('[Community] Setting up realtime subscription...');
-    postsSubRef.current = subscribeToCommunityPosts((newPost) => {
-      console.log('[Community] New post received:', newPost);
+    const postsChannel = subscribeToCommunityPosts((newPost) => {
+      console.log('[Community] New realtime post:', newPost);
       setPosts(prev => {
-        // Prevent duplicates
         if (prev.some(p => p.id === newPost.id)) {
           return prev;
         }
@@ -74,18 +74,19 @@ export function CommunityScreen({ user }) {
       });
     });
 
+    postsSubRef.current = postsChannel;
+
     return () => {
       if (postsSubRef.current) {
         try {
-          postsSubRef.current.unsubscribe();
+          unsubscribe(postsSubRef.current);
           console.log('[Community] Unsubscribed from posts');
         } catch (err) {
           console.warn('[Community] Unsubscribe error:', err);
         }
       }
-      // Clean up comment subscriptions
       Object.values(commentSubsRef.current).forEach(sub => {
-        try { sub.unsubscribe(); } catch {}
+        try { unsubscribe(sub); } catch {}
       });
       commentSubsRef.current = {};
     };
@@ -93,27 +94,41 @@ export function CommunityScreen({ user }) {
 
   const handlePostSubmit = async () => {
     if (!newPostContent.trim() || submitting) return;
+    if (!user?.id) {
+      setError('You must be logged in to post');
+      return;
+    }
+    
     setSubmitting(true);
+    setError(null);
 
     const submit = async (location) => {
       try {
-        console.log('[Community] Submitting post...');
-        const { error: postErr } = await saveCommunityPost({
-          userId: user?.id,
+        console.log('[Community] Submitting post...', { userId: user.id, content: newPostContent });
+        
+        const { data, error: postErr } = await saveCommunityPost({
+          userId: user.id,
           content: newPostContent.trim(),
           location
         });
         
         if (postErr) {
           console.error('[Community] Post error:', postErr);
-          throw postErr;
+          console.error('[Community] Error details:', JSON.stringify(postErr, null, 2));
+          
+          if (postErr.message?.includes('permission') || postErr.code === '42501') {
+            setError('Permission denied. Please refresh and try again.');
+          } else {
+            setError(`Failed to post: ${postErr.message}`);
+          }
+          return;
         }
         
-        console.log('[Community] Post submitted successfully');
+        console.log('[Community] Post success:', data);
         setNewPostContent('');
       } catch (err) {
-        console.error('[Community] Error posting:', err);
-        setError('Could not submit post. Try again.');
+        console.error('[Community] Post exception:', err);
+        setError('Failed to submit post. Please try again.');
       } finally {
         setSubmitting(false);
       }
@@ -132,21 +147,34 @@ export function CommunityScreen({ user }) {
 
   const toggleComments = async (postId) => {
     if (activeComments[postId] !== undefined) {
-      // Collapse
       setActiveComments(prev => {
         const next = { ...prev };
         delete next[postId];
         return next;
       });
       if (commentSubsRef.current[postId]) {
-        try { commentSubsRef.current[postId].unsubscribe(); } catch {}
+        try { unsubscribe(commentSubsRef.current[postId]); } catch {}
         delete commentSubsRef.current[postId];
       }
     } else {
-      // Load comments
       try {
-        const { data } = await getComments(postId);
+        const { data, error: commentsErr } = await getComments(postId);
+        if (commentsErr) {
+          console.error('[Community] Load comments error:', commentsErr);
+          return;
+        }
         setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
+        
+        const commentChannel = subscribeToComments(postId, (newComment) => {
+          setActiveComments(prev => {
+            const existing = prev[postId] || [];
+            if (existing.some(c => c.id === newComment.id)) {
+              return prev;
+            }
+            return { ...prev, [postId]: [...existing, newComment] };
+          });
+        });
+        commentSubsRef.current[postId] = commentChannel;
       } catch (err) {
         console.error('[Community] Error loading comments:', err);
       }
@@ -156,18 +184,46 @@ export function CommunityScreen({ user }) {
   const handleCommentSubmit = async (postId) => {
     const content = newComments[postId]?.trim();
     if (!content || sendingComment[postId]) return;
+    if (!user?.id) {
+      setError('You must be logged in to comment');
+      return;
+    }
+    
     setSendingComment(prev => ({ ...prev, [postId]: true }));
     try {
-      await saveComment({ postId, userId: user?.id, content });
+      const { error: commentErr } = await saveComment({ 
+        postId, 
+        userId: user.id, 
+        content 
+      });
+      
+      if (commentErr) {
+        console.error('[Community] Comment error:', commentErr);
+        setError(`Failed to comment: ${commentErr.message}`);
+        return;
+      }
+      
       setNewComments(prev => ({ ...prev, [postId]: '' }));
-      // Refresh comments
+      
       const { data } = await getComments(postId);
       setActiveComments(prev => ({ ...prev, [postId]: data || [] }));
     } catch (err) {
-      console.error('[Community] Comment error:', err);
+      console.error('[Community] Comment exception:', err);
     } finally {
       setSendingComment(prev => ({ ...prev, [postId]: false }));
     }
+  };
+
+  const getAuthorName = (post) => {
+    if (post.user_profiles?.name) return post.user_profiles.name;
+    if (post.profiles?.name) return post.profiles.name;
+    return 'Anonymous';
+  };
+
+  const getCommentAuthorName = (comment) => {
+    if (comment.user_profiles?.name) return comment.user_profiles.name;
+    if (comment.profiles?.name) return comment.profiles.name;
+    return 'Anonymous';
   };
 
   return (
@@ -184,12 +240,13 @@ export function CommunityScreen({ user }) {
           value={newPostContent}
           onChange={e => setNewPostContent(e.target.value)}
           rows="3"
+          disabled={submitting}
         />
         <div className="post-box-footer">
           <button
             className="btn btn-primary"
             onClick={handlePostSubmit}
-            disabled={submitting || !newPostContent.trim()}
+            disabled={submitting || !newPostContent.trim() || !user?.id}
           >
             {submitting ? 'Posting...' : 'Post'}
           </button>
@@ -199,6 +256,12 @@ export function CommunityScreen({ user }) {
       {error && (
         <div style={{ margin: '0 20px 12px', padding: '12px 16px', background: 'var(--red-dim)', border: '1px solid rgba(255,61,61,0.3)', borderRadius: 'var(--radius-md)', color: 'var(--red)', fontSize: 14 }}>
           {error}
+          <button 
+            onClick={() => setError(null)} 
+            style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -218,7 +281,7 @@ export function CommunityScreen({ user }) {
         ) : posts.map(post => (
           <div key={post.id} className="post-card card">
             <div className="post-header">
-              <strong>{post.user_profiles?.name || 'Anonymous'}</strong>
+              <strong>{getAuthorName(post)}</strong>
               <span className="post-time">{timeAgo(post.created_at)}</span>
             </div>
             <p className="post-content">{post.content}</p>
@@ -237,7 +300,7 @@ export function CommunityScreen({ user }) {
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>No comments yet</p>
                   ) : activeComments[post.id].map(comment => (
                     <div key={comment.id} className="comment">
-                      <strong>{comment.user_profiles?.name || 'Anonymous'}</strong>
+                      <strong>{getCommentAuthorName(comment)}</strong>
                       <span> {comment.content}</span>
                       <div className="comment-time">{timeAgo(comment.created_at)}</div>
                     </div>
@@ -249,13 +312,19 @@ export function CommunityScreen({ user }) {
                     type="text"
                     placeholder="Add a comment..."
                     value={newComments[post.id] || ''}
-                    onChange={e => setNewComments(prev => ({ ...prev, [post.id]: e.target.value }))}
-                    onKeyDown={e => e.key === 'Enter' && handleCommentSubmit(post.id)}
+                    onChange={e => setNewComments(prev => ({ ...prev, [postId]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        const postId = post.id;
+                        setTimeout(() => handleCommentSubmit(postId), 0);
+                      }
+                    }}
+                    disabled={!user?.id}
                   />
                   <button
                     className="btn btn-secondary send-comment-btn"
                     onClick={() => handleCommentSubmit(post.id)}
-                    disabled={sendingComment[post.id]}
+                    disabled={sendingComment[post.id] || !user?.id}
                   >
                     {sendingComment[post.id] ? '...' : 'Send'}
                   </button>
