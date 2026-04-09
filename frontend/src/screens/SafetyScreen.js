@@ -222,6 +222,8 @@ export function SafetyScreen({ onSOS, user }) {
 
   const sendToBackend = async (message, history) => {
     setChatLoading(true);
+    console.log('[SafetyScreen] Sending message to backend:', message.substring(0, 50));
+    
     try {
       const response = await fetch(CHAT_API_URL, {
         method: 'POST',
@@ -230,13 +232,43 @@ export function SafetyScreen({ onSOS, user }) {
         signal: AbortSignal.timeout(20000)
       });
 
+      console.log('[SafetyScreen] Response status:', response.status);
+
+      if (!response.ok) {
+        console.error('[SafetyScreen] API error:', response.status);
+        if (response.status === 500) {
+          return 'AI assistant is temporarily unavailable. For help, call 112 or use the SOS button.';
+        }
+        return 'Sorry, I couldn\'t respond right now. Please try again.';
+      }
+
       const data = await response.json();
-      return data.reply || 'I understand this is difficult. Please stay calm. Consider calling 112 or a trusted person.';
+      console.log('[SafetyScreen] Response data:', JSON.stringify(data));
+
+      if (!data.success) {
+        console.error('[SafetyScreen] API returned error:', data.error);
+        return data.reply || 'I\'m having trouble responding. Please try again or call 112 for immediate help.';
+      }
+
+      if (!data.reply) {
+        console.error('[SafetyScreen] No reply in response');
+        return 'I couldn\'t generate a response. Please try again or call 112 for help.';
+      }
+
+      return data.reply;
+      
     } catch (err) {
-      console.error('Chat API error:', err);
+      console.error('[SafetyScreen] Chat API error:', err);
+      console.error('[SafetyScreen] Error name:', err.name);
+      
       if (err.name === 'TimeoutError' || err.name === 'AbortError') {
         return 'Response took too long. Please try again, or call 112 for immediate help.';
       }
+      
+      if (err.message?.includes('Failed to fetch')) {
+        return 'Cannot connect to server. Please check your internet connection and try again.';
+      }
+      
       return 'Sorry, I couldn\'t respond. For immediate safety, call emergency services (112) or a trusted person.';
     } finally {
       setChatLoading(false);
