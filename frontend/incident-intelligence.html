@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avana - Incident Intelligence</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 8px;
+            font-size: 16px;
+            min-height: 120px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .result-header {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .result-item {
+            text-align: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .result-label {
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .result-value {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .category-crime .result-value { color: #dc3545; }
+        .category-suspicious .result-value { color: #ffc107; }
+        .category-infrastructure .result-value { color: #17a2b8; }
+        .category-emergency .result-value { color: #dc3545; }
+        .category-other .result-value { color: #6c757d; }
+
+        .severity-low .result-value { color: #28a745; }
+        .severity-medium .result-value { color: #ffc107; }
+        .severity-high .result-value { color: #dc3545; }
+
+        .summary-box {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .summary-label {
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .summary-text {
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            display: none;
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .history-section {
+            margin-top: 30px;
+        }
+
+        .history-header {
+            color: white;
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+        }
+
+        .history-item {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .history-meta {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-category {
+            background: #e7e9fc;
+            color: #667eea;
+        }
+
+        .badge-severity {
+            color: white;
+        }
+
+        .badge-severity.low { background: #28a745; }
+        .badge-severity.medium { background: #ffc107; }
+        .badge-severity.high { background: #dc3545; }
+
+        .history-text {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+
+        .history-summary {
+            color: #333;
+            font-size: 0.95rem;
+        }
+
+        .history-time {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Avana</h1>
+            <p>Incident Intelligence</p>
+        </div>
+
+        <div class="card">
+            <div class="form-group">
+                <label for="reportInput">Submit Safety Report</label>
+                <textarea 
+                    id="reportInput" 
+                    placeholder="Describe the incident you witnessed or experienced..."
+                ></textarea>
+            </div>
+            <button id="submitBtn" class="btn">Analyze Report</button>
+
+            <div id="error" class="error"></div>
+        </div>
+
+        <div class="card result" id="resultCard">
+            <div class="result-header">Analysis Results</div>
+            <div class="result-grid">
+                <div class="result-item" id="categoryResult">
+                    <div class="result-label">Category</div>
+                    <div class="result-value" id="categoryValue">-</div>
+                </div>
+                <div class="result-item" id="severityResult">
+                    <div class="result-label">Severity</div>
+                    <div class="result-value" id="severityValue">-</div>
+                </div>
+                <div class="result-item">
+                    <div class="result-label">Processing</div>
+                    <div class="result-value" id="processingTime">-</div>
+                </div>
+            </div>
+            <div class="summary-box">
+                <div class="summary-label">Summary</div>
+                <div class="summary-text" id="summaryValue">-</div>
+            </div>
+        </div>
+
+        <div class="card loading" id="loadingCard">
+            <div class="spinner"></div>
+            <div>Analyzing report with AI...</div>
+        </div>
+
+        <div class="history-section" id="historySection">
+            <div class="history-header">Recent Reports</div>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // INCIDENT INTELLIGENCE - FRONTEND
+        // ============================================
+
+        const API_BASE = 'http://localhost:3001/api';
+        const reportInput = document.getElementById('reportInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultCard = document.getElementById('resultCard');
+        const loadingCard = document.getElementById('loadingCard');
+        const errorDiv = document.getElementById('error');
+        const historyList = document.getElementById('historyList');
+
+        // ============================================
+        // SUBMIT REPORT
+        // ============================================
+        async function submitReport() {
+            const text = reportInput.value.trim();
+
+            if (!text) {
+                showError('Please enter a report description');
+                return;
+            }
+
+            // UI States
+            submitBtn.disabled = true;
+            loadingCard.classList.add('show');
+            resultCard.classList.remove('show');
+            errorDiv.classList.remove('show');
+
+            console.log('[Frontend] Submitting report:', text.substring(0, 50) + '...');
+
+            try {
+                const response = await fetch(`${API_BASE}/analyze-report`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text })
+                });
+
+                const data = await response.json();
+                console.log('[Frontend] API Response:', data);
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+
+                // Display results
+                displayResult(data.data, data.processingTime);
+                
+                // Refresh history
+                fetchHistory();
+
+            } catch (error) {
+                console.error('[Frontend] Error:', error.message);
+                showError(error.message);
+            } finally {
+                submitBtn.disabled = false;
+                loadingCard.classList.remove('show');
+            }
+        }
+
+        // ============================================
+        // DISPLAY RESULT
+        // ============================================
+        function displayResult(data, processingTime) {
+            document.getElementById('categoryValue').textContent = data.category;
+            document.getElementById('severityValue').textContent = data.severity;
+            document.getElementById('summaryValue').textContent = data.summary;
+            document.getElementById('processingTime').textContent = processingTime;
+
+            // Update styling based on category
+            const categoryResult = document.getElementById('categoryResult');
+            categoryResult.className = `result-item category-${data.category}`;
+
+            // Update styling based on severity
+            const severityResult = document.getElementById('severityResult');
+            severityResult.className = `result-item severity-${data.severity}`;
+
+            resultCard.classList.add('show');
+        }
+
+        // ============================================
+        // FETCH HISTORY
+        // ============================================
+        async function fetchHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/reports?limit=10`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderHistory(data.data);
+                }
+            } catch (error) {
+                console.error('[Frontend] Error fetching history:', error.message);
+            }
+        }
+
+        // ============================================
+        // RENDER HISTORY
+        // ============================================
+        function renderHistory(reports) {
+            if (!reports || reports.length === 0) {
+                historyList.innerHTML = '<p style="color: #666; text-align: center;">No reports yet</p>';
+                return;
+            }
+
+            historyList.innerHTML = reports.map(report => `
+                <div class="history-item">
+                    <div class="history-meta">
+                        <span class="badge badge-category">${report.category}</span>
+                        <span class="badge badge-severity ${report.severity}">${report.severity}</span>
+                    </div>
+                    <div class="history-text">${escapeHtml(report.text)}</div>
+                    <div class="history-summary">${escapeHtml(report.summary)}</div>
+                    <div class="history-time">${formatDate(report.created_at)}</div>
+                </div>
+            `).join('');
+        }
+
+        // ============================================
+        // UTILITIES
+        // ============================================
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+        submitBtn.addEventListener('click', submitReport);
+
+        reportInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                submitReport();
+            }
+        });
+
+        // Initial history load
+        fetchHistory();
+
+        // Refresh history every 30 seconds
+        setInterval(fetchHistory, 30000);
+    </script>
+</body>
+</html>

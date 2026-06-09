@@ -634,6 +634,71 @@ export async function getEvidence(userId) {
   }
 }
 
+export function subscribeToSafetyEvents(callback) {
+  try {
+    const channel = supabase
+      .channel('safety_events_changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'safety_events' },
+        (payload) => callback(payload.new)
+      )
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') console.warn('[Realtime] safety_events subscribe status:', status);
+      });
+    return channel;
+  } catch (err) {
+    console.error('[Realtime] subscribeToSafetyEvents error:', err);
+    return { unsubscribe: () => {} };
+  }
+}
+
+export function subscribeToCommunityReports(callback) {
+  try {
+    const channel = supabase
+      .channel('community_reports_changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'community_reports' },
+        (payload) => callback(payload.new)
+      )
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') console.warn('[Realtime] community_reports subscribe status:', status);
+      });
+    return channel;
+  } catch (err) {
+    console.error('[Realtime] subscribeToCommunityReports error:', err);
+    return { unsubscribe: () => {} };
+  }
+}
+
+export async function getSafetyAnalytics(userId) {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data, error } = await supabase
+      .from('safety_events')
+      .select('risk_level')
+      .eq('user_id', userId)
+      .gte('created_at', thirtyDaysAgo.toISOString());
+
+    if (error) {
+      console.error('[DB] getSafetyAnalytics error:', error);
+      return { data: null, error };
+    }
+
+    const total = data ? data.length : 0;
+    const highRisk = data ? data.filter(e => e.risk_level === 'HIGH' || e.risk_level === 'CRITICAL').length : 0;
+    const mediumRisk = data ? data.filter(e => e.risk_level === 'MEDIUM').length : 0;
+
+    return { data: { total, highRisk, mediumRisk }, error: null };
+  } catch (err) {
+    console.error('[DB] getSafetyAnalytics error:', err);
+    return { data: null, error: err };
+  }
+}
+
 export function unsubscribe(channel) {
   if (channel && typeof channel.unsubscribe === 'function') {
     channel.unsubscribe();

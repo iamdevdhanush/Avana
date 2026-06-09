@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  avana-backend:
+    build: .
+    container_name: avana-backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
