@@ -3,6 +3,7 @@ import {
   getCommunityPosts,
   saveCommunityPost,
   subscribeToCommunityPosts,
+  subscribeToComments,
   getComments,
   saveComment,
   unsubscribe
@@ -312,7 +313,7 @@ export function CommunityScreen({ user }) {
                     type="text"
                     placeholder="Add a comment..."
                     value={newComments[post.id] || ''}
-                    onChange={e => setNewComments(prev => ({ ...prev, [postId]: e.target.value }))}
+                    onChange={e => setNewComments(prev => ({ ...prev, [post.id]: e.target.value }))}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
                         const postId = post.id;
